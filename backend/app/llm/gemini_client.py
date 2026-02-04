@@ -50,6 +50,7 @@ Nhiệm vụ của bạn:
 1. Hỗ trợ chuẩn bị cuộc họp (Pre-meeting): Gợi ý agenda, tài liệu, người tham gia
 2. Hỗ trợ trong cuộc họp (In-meeting): Ghi chép, phát hiện action items, decisions, risks
 3. Hỗ trợ sau cuộc họp (Post-meeting): Tạo biên bản, theo dõi tasks, Q&A
+4. Hỗ trợ học tập (Study Mode): Trích xuất khái niệm, tạo ví dụ, tạo quiz trắc nghiệm
 
 Nguyên tắc:
 - Trả lời tiếng Việt, ngắn gọn, không markdown.
@@ -87,77 +88,10 @@ Nguyên tắc:
             return self._mock_response(message)
     
     def _clean_markdown(self, text: str) -> str:
-        import re
-        text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
-        text = re.sub(r'\*(.*?)\*', r'\1', text)
-        text = re.sub(r'^#+\s*', '', text, flags=re.MULTILINE)
-        text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)
-        text = re.sub(r'`([^`]+)`', r'\1', text)
-        text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)
-        text = re.sub(r'\s+', ' ', text)
-        text = re.sub(r'\n{3,}', '\n\n', text)
         return text.strip()
     
     def _mock_response(self, message: str) -> str:
         return self.mock_response
-
-
-class MeetingAIAssistant:
-    """AI Assistant for meeting context (uses Groq)"""
-    
-    def __init__(self, meeting_id: str, meeting_context: Optional[Dict[str, Any]] = None):
-        self.meeting_id = meeting_id
-        self.meeting_context = meeting_context or {}
-        self.chat = GeminiChat()
-    
-    def _build_context(self) -> str:
-        ctx_parts = []
-        if self.meeting_context.get('title'):
-            ctx_parts.append(f"Cuộc họp: {self.meeting_context['title']}")
-        if self.meeting_context.get('type'):
-            ctx_parts.append(f"Loại: {self.meeting_context['type']}")
-        if self.meeting_context.get('project'):
-            ctx_parts.append(f"Dự án: {self.meeting_context['project']}")
-        if self.meeting_context.get('agenda'):
-            ctx_parts.append(f"Agenda: {self.meeting_context['agenda']}")
-        if self.meeting_context.get('transcript'):
-            ctx_parts.append(f"Transcript (trích): {self.meeting_context['transcript'][:500]}...")
-        return "\n".join(ctx_parts)
-    
-    async def ask(self, question: str) -> str:
-        context = self._build_context()
-        return await self.chat.chat(question, context)
-    
-    async def generate_agenda(self, meeting_type: str) -> str:
-        prompt = f"""Tạo chương trình cuộc họp chi tiết cho loại: {meeting_type}
-
-Yêu cầu JSON:
-[{{"order":1,"title":"...","duration_minutes":10,"presenter":"..."}}]"""
-        return await self.chat.chat(prompt)
-    
-    async def extract_action_items(self, transcript: str) -> str:
-        prompt = f"""Trích Action Items từ transcript:
-{transcript[:2000]}
-Format JSON: [{{"description":"","owner":"","deadline":"","priority":""}}]"""
-        return await self.chat.chat(prompt)
-    
-    async def extract_decisions(self, transcript: str) -> str:
-        prompt = f"""Trích Decisions từ transcript:
-{transcript[:2000]}
-Format JSON: [{{"description":"","rationale":"","confirmed_by":""}}]"""
-        return await self.chat.chat(prompt)
-    
-    async def extract_risks(self, transcript: str) -> str:
-        prompt = f"""Trích Risks từ transcript:
-{transcript[:2000]}
-Format JSON: [{{"description":"","severity":"","mitigation":""}}]"""
-        return await self.chat.chat(prompt)
-    
-    async def generate_summary(self, transcript: str) -> str:
-        prompt = f"""Tóm tắt cuộc họp từ transcript:
-{transcript[:3000]}
-"""
-        return await self.chat.chat(prompt)
 
 
 class MeetingAIAssistant:
@@ -185,7 +119,7 @@ class MeetingAIAssistant:
             ctx_parts.append(f"Agenda: {self.meeting_context['agenda']}")
         
         if self.meeting_context.get('transcript'):
-            ctx_parts.append(f"Transcript (trích): {self.meeting_context['transcript'][:500]}...")
+            ctx_parts.append(f"Transcript (trích): {self.meeting_context['transcript'][:15000]}...")
         
         return "\n".join(ctx_parts)
     
@@ -209,7 +143,7 @@ Yêu cầu:
         """Extract action items from transcript"""
         prompt = f"""Phân tích transcript sau và trích xuất các Action Items:
 
-{transcript[:2000]}
+{transcript[:15000]}
 
 Format output JSON:
 [
@@ -217,7 +151,8 @@ Format output JSON:
     "description": "Mô tả task",
     "owner": "Tên người được giao (nếu có)",
     "deadline": "Deadline (nếu được đề cập)",
-    "priority": "high/medium/low"
+    "priority": "high/medium/low",
+    "topic_id": "topic_related"
   }}
 ]"""
         
@@ -227,7 +162,7 @@ Format output JSON:
         """Extract decisions from transcript"""
         prompt = f"""Phân tích transcript sau và trích xuất các Quyết định (Decisions):
 
-{transcript[:2000]}
+{transcript[:15000]}
 
 Format output JSON:
 [
@@ -244,7 +179,7 @@ Format output JSON:
         """Extract risks from transcript"""
         prompt = f"""Phân tích transcript sau và trích xuất các Rủi ro (Risks):
 
-{transcript[:2000]}
+{transcript[:15000]}
 
 Format output JSON:
 [
@@ -256,6 +191,52 @@ Format output JSON:
 ]"""
         
         return await self.chat.chat(prompt)
+
+    # ================= STUDY MODE METHODS =================
+
+    async def extract_concepts(self, transcript: str) -> str:
+        """Extract key concepts and terms from a study session transcript."""
+        prompt = f"""Phân tích transcript buổi học/nghiên cứu sau để trích xuất các KHÁI NIỆM quan trọng (Concepts):
+
+{transcript[:15000]}
+
+Yêu cầu:
+- Xác định các định nghĩa, thuật ngữ chuyên ngành, hoặc ý tưởng cốt lõi.
+- Giải thích ngắn gọn dễ hiểu.
+
+Format output JSON:
+[
+  {{
+    "term": "Tên khái niệm/thuật ngữ",
+    "definition": "Định nghĩa hoặc giải thích ngắn gọn",
+    "example": "Ví dụ minh hoạ (nếu có trong bài)"
+  }}
+]"""
+        return await self.chat.chat(prompt)
+
+    async def generate_quiz(self, transcript: str) -> str:
+        """Generate a quiz based on the transcript."""
+        prompt = f"""Dựa trên nội dung buổi học sau, hãy tạo bộ câu hỏi trắc nghiệm (Quiz) để ôn tập:
+
+{transcript[:15000]}
+
+Yêu cầu:
+- 5 câu hỏi trắc nghiệm.
+- Mỗi câu có 4 lựa chọn (options).
+- Chỉ định rõ đáp án đúng và giải thích tại sao.
+
+Format output JSON:
+[
+  {{
+    "question": "Nội dung câu hỏi",
+    "options": ["Đáp án A", "Đáp án B", "Đáp án C", "Đáp án D"],
+    "correct_answer_index": 0, // 0=A, 1=B, 2=C, 3=D
+    "explanation": "Giải thích chi tiết tại sao đáp án này đúng"
+  }}
+]"""
+        return await self.chat.chat(prompt)
+
+    # ================= SUMMARY GENERATION =================
 
     async def generate_summary_with_context(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """Generate meeting summary with full context and strict guardrails."""
@@ -307,7 +288,7 @@ Trả về đúng JSON, không kèm text khác:
 Phân tích nội dung cuộc họp (transcript) bên dưới và tạo biên bản chi tiết.
 
 TRANSCRIPT CUỘC HỌP:
-{transcript[:15000]}
+{transcript[:20000]}
 
 YÊU CẦU OUTPUT (JSON Strict Mode):
 Trả về MỘT JSON Object duy nhất (KHÔNG kèm markdown block ```json```) với cấu trúc:
@@ -356,7 +337,16 @@ Trả về MỘT JSON Object duy nhất (KHÔNG kèm markdown block ```json```) 
     
     "attendees_mentioned": [
         "Tên người tham gia được nhắc đến trong transcript"
-    ]
+    ],
+
+    "study_pack": {{
+        "concepts": [
+             {{ "term": "...", "definition": "...", "example": "..." }}
+        ],
+        "quiz": [
+             {{ "question": "...", "options": ["..."], "correct_answer_index": 0, "explanation": "..." }}
+        ]
+    }}
 }}
 
 LƯU Ý QUAN TRỌNG:
@@ -365,6 +355,8 @@ LƯU Ý QUAN TRỌNG:
 - Nếu không xác định được người, ghi "Không rõ" thay vì bỏ trống
 - Priority: high = được nhấn mạnh nhiều lần, medium = đề cập bình thường, low = đề cập qua
 - executive_summary phải viết như văn bản chuyên nghiệp, có đầu có đuôi
+- NẾU đây là buổi học/training: hãy điền đầy đủ thông tin vào "study_pack".
+- NẾU đây là cuộc họp dự án/công việc: "study_pack" có thể để rỗng hoặc null.
 """
         
         response = await self.chat.chat(prompt)
@@ -399,7 +391,8 @@ LƯU Ý QUAN TRỌNG:
                 "decisions": [],
                 "risks": [],
                 "next_steps": [],
-                "attendees_mentioned": []
+                "attendees_mentioned": [],
+                "study_pack": None
             }
     
     async def generate_summary(self, transcript: str) -> str:
