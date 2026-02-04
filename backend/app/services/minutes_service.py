@@ -448,6 +448,7 @@ async def generate_minutes_with_ai(
         "decisions": decisions,
         "risks": risks,
         "documents": related_docs,
+        "study_pack": None
     }
 
     summary_result = {"summary": "", "key_points": []}
@@ -458,11 +459,41 @@ async def generate_minutes_with_ai(
         'description': meeting_desc
     })
 
+    # STUDY MODE DETECTION
+    is_study_session = meeting_type and meeting_type.lower() in ['study', 'training', 'education', 'learning', 'workshop']
+    study_pack = None
+
     try:
+        # 1. Generate core summary
         if hasattr(assistant, "generate_summary_with_context"):
             summary_result = await assistant.generate_summary_with_context(context_payload)
         else:
             summary_result = await assistant.generate_summary(transcript or "No transcript available")
+
+        # 2. If Study Session, generate specialized content
+        if is_study_session and transcript:
+            import json
+            concepts_json = await assistant.extract_concepts(transcript)
+            quiz_json = await assistant.generate_quiz(transcript)
+            
+            try:
+                # Attempt to parse json responses
+                def parse_json_safe(text):
+                    try: 
+                        return json.loads(text)
+                    except:
+                        import re
+                        match = re.search(r'\[.*\]', text, re.DOTALL)
+                        return json.loads(match.group(0)) if match else []
+
+                study_pack = {
+                    "concepts": parse_json_safe(concepts_json),
+                    "quiz": parse_json_safe(quiz_json)
+                }
+                context_payload['study_pack'] = study_pack
+            except Exception as e:
+                print(f"Error parsing study pack: {e}")
+
     except Exception:
         # If AI fails, fall back to simple templated summary to avoid 500
         fallback_summary = meeting_desc or "Chưa có mô tả cuộc họp. Vui lòng cập nhật."
@@ -507,6 +538,7 @@ async def generate_minutes_with_ai(
             actions=actions,
             decisions=decisions,
             risks=risks,
+            study_pack=study_pack,
             format_type=request.format
         )
     
@@ -537,6 +569,7 @@ def format_minutes(
     actions: List[str],
     decisions: List[str],
     risks: List[str],
+    study_pack: Optional[Dict[str, Any]] = None,
     format_type: str = 'markdown'
 ) -> str:
     """Format meeting minutes"""
@@ -562,6 +595,35 @@ def format_minutes(
         for point in key_points:
             lines.append(f"- {point}")
         lines.append("")
+        
+    # STUDY PACK SECTIONS
+    if study_pack:
+        if study_pack.get("concepts"):
+            lines.append("## 🧠 Khái niệm & Thuật ngữ quan trọng")
+            for item in study_pack["concepts"]:
+                term = item.get("term", "")
+                defn = item.get("definition", "")
+                ex = item.get("example", "")
+                lines.append(f"### {term}")
+                lines.append(f"- **Định nghĩa:** {defn}")
+                if ex:
+                    lines.append(f"- *Ví dụ:* {ex}")
+                lines.append("")
+        
+        if study_pack.get("quiz"):
+            lines.append("## 📝 Quiz Ôn tập")
+            for i, q in enumerate(study_pack["quiz"], 1):
+                question = q.get("question", "")
+                options = q.get("options", [])
+                ans_idx = q.get("correct_answer_index", 0)
+                expl = q.get("explanation", "")
+                
+                lines.append(f"**Câu {i}: {question}**")
+                for j, opt in enumerate(options):
+                    is_correct = "✅" if j == ans_idx else ""
+                    lines.append(f"- [{'x' if j == ans_idx else ' '}] {opt} {is_correct}")
+                lines.append(f"> *Giải thích: {expl}*")
+                lines.append("")
     
     # Decisions
     if decisions:
