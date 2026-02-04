@@ -7,12 +7,12 @@ from app.llm.prompts.in_meeting_prompts import (
     TOPIC_SEGMENT_PROMPT,
     RECAP_TOPIC_INTENT_PROMPT,
 )
-from app.llm.gemini_client import GeminiChat, get_gemini_client
+from app.llm.gemini_client import GeminiChat, get_groq_client
 from app.core.config import get_settings
 
 
 def _call_gemini(prompt: str) -> str:
-    client = get_gemini_client()
+    client = get_groq_client()
     if not client:
         return ""
     try:
