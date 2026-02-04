@@ -2,7 +2,7 @@
 Meeting Minutes Service
 """
 from datetime import datetime
-from typing import Optional, List
+from typing import List, Optional, Tuple, Dict, AnyList
 from uuid import uuid4
 from sqlalchemy.orm import Session
 from sqlalchemy import text
