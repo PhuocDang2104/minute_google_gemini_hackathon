@@ -97,3 +97,19 @@ postgresql://minute:minute@localhost:5433/minute
    export GEMINI_API_KEY=your-api-key
    ```
 3. **Logs backend**: `docker logs minute_backend -f`
+
+---
+
+## Troubleshooting
+
+- If you see `ModuleNotFoundError: No module named 'app'`, rebuild the backend image:
+  ```bash
+  cd infra
+  docker compose up -d --build backend
+  ```
+- If Postgres logs show `role "minute" does not exist`, reset the DB volume so init scripts run:
+  ```bash
+  cd infra
+  docker compose down -v
+  docker compose up -d postgres
+  ```

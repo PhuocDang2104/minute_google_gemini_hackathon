@@ -71,6 +71,43 @@ interface FilterState {
   searchQuery: string;
 }
 
+interface VideoSuggestion {
+  id: string;
+  title: string;
+  channel: string;
+  duration: string;
+  url: string;
+  accent: string;
+}
+
+// TODO: replace with backend-driven suggestions once personalization is available.
+const DEFAULT_VIDEO_SUGGESTIONS: VideoSuggestion[] = [
+  {
+    id: 'yt-01',
+    title: 'AI Fundamentals: Building Your First Meeting Summary',
+    channel: 'Minute Labs',
+    duration: '28:12',
+    url: 'https://www.youtube.com/watch?v=3U8n4VgZ2gk',
+    accent: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+  },
+  {
+    id: 'yt-02',
+    title: 'Product Sync Workshop: From Notes to Action Items',
+    channel: 'Team Rituals',
+    duration: '42:05',
+    url: 'https://www.youtube.com/watch?v=Y3A6gQ9c2BM',
+    accent: 'linear-gradient(135deg, #14b8a6, #0ea5e9)',
+  },
+  {
+    id: 'yt-03',
+    title: 'Leadership Update: Structuring Weekly Executive Recaps',
+    channel: 'Workflows Academy',
+    duration: '35:47',
+    url: 'https://www.youtube.com/watch?v=V7L8eF7JX2c',
+    accent: 'linear-gradient(135deg, #f59e0b, #ef4444)',
+  },
+];
+
 export const PostMeetTabFireflies = ({ meeting, onRefresh }: PostMeetTabFirefliesProps) => {
   const [minutes, setMinutes] = useState<MeetingMinutes | null>(null);
   const [transcripts, setTranscripts] = useState<TranscriptChunk[]>([]);
@@ -282,17 +319,27 @@ export const PostMeetTabFireflies = ({ meeting, onRefresh }: PostMeetTabFireflie
     );
   }
 
+  const isEmptySession =
+    !meeting.recording_url &&
+    !minutes &&
+    transcripts.length === 0 &&
+    actionItems.length === 0 &&
+    decisions.length === 0 &&
+    risks.length === 0;
+
   return (
-    <div className="fireflies-layout">
+    <div className={`fireflies-layout ${isEmptySession ? 'fireflies-layout--empty' : ''}`}>
       {/* Left Sidebar - Filters & Analytics */}
-      <LeftPanel
-        filters={filters}
-        setFilters={setFilters}
-        actionItems={actionItems}
-        speakerStats={speakerStats}
-        transcripts={transcripts}
-        onAddToJira={handleAddToJira}
-      />
+      {!isEmptySession && (
+        <LeftPanel
+          filters={filters}
+          setFilters={setFilters}
+          actionItems={actionItems}
+          speakerStats={speakerStats}
+          transcripts={transcripts}
+          onAddToJira={handleAddToJira}
+        />
+      )}
 
       {/* Center - Video + AI Summary & Content */}
       <CenterPanel
@@ -314,16 +361,20 @@ export const PostMeetTabFireflies = ({ meeting, onRefresh }: PostMeetTabFireflie
         onSelectTemplate={setSelectedTemplateId}
         defaultTemplate={defaultTemplate}
         templatesLoading={templatesLoading}
+        isEmptySession={isEmptySession}
+        videoSuggestions={DEFAULT_VIDEO_SUGGESTIONS}
       />
 
       {/* Right - Transcript */}
-      <RightPanel
-        transcripts={transcripts}
-        filters={filters}
-        meetingId={meeting.id}
-        onAddTranscripts={handleAddTranscripts}
-        onDeleteAllTranscripts={handleDeleteAllTranscripts}
-      />
+      {!isEmptySession && (
+        <RightPanel
+          transcripts={transcripts}
+          filters={filters}
+          meetingId={meeting.id}
+          onAddTranscripts={handleAddTranscripts}
+          onDeleteAllTranscripts={handleDeleteAllTranscripts}
+        />
+      )}
     </div>
   );
 };
@@ -484,6 +535,8 @@ interface CenterPanelProps {
   onSelectTemplate: (templateId: string | null) => void;
   defaultTemplate: MinutesTemplate | null;
   templatesLoading: boolean;
+  isEmptySession: boolean;
+  videoSuggestions: VideoSuggestion[];
 }
 
 const CenterPanel = ({
@@ -505,6 +558,8 @@ const CenterPanel = ({
   onSelectTemplate,
   defaultTemplate,
   templatesLoading,
+  isEmptySession,
+  videoSuggestions,
 }: CenterPanelProps) => {
   const [isEditingSummary, setIsEditingSummary] = useState(false);
   const [editContent, setEditContent] = useState('');
@@ -893,6 +948,44 @@ const CenterPanel = ({
       alert(`Lỗi: ${err.message || 'Không thể xóa video'}`);
     }
   };
+
+  const handlePickSuggestion = async (suggestion: VideoSuggestion) => {
+    if (!suggestion.url) return;
+    await handleSetLocalUrl(suggestion.url);
+  };
+
+  const handleDownloadSuggestion = (suggestion: VideoSuggestion) => {
+    if (!suggestion.url) return;
+    window.open(suggestion.url, '_blank', 'noopener,noreferrer');
+  };
+
+  if (isEmptySession) {
+    return (
+      <div className="fireflies-center-panel fireflies-center-panel--empty">
+        <div className="fireflies-empty-hero">
+          <VideoSection
+            recordingUrl={meeting.recording_url}
+            onUpload={handleVideoUpload}
+            onDelete={handleVideoDelete}
+            onSetLocalUrl={handleSetLocalUrl}
+            isUploading={isUploadingVideo}
+            isProcessing={isProcessingVideo}
+            dragActive={dragActive}
+            onDrag={handleDrag}
+            onDrop={handleDrop}
+            onFileInput={handleFileInput}
+            showHeader={false}
+            minimal
+          />
+          <SuggestedVideoCarousel
+            suggestions={videoSuggestions}
+            onPick={handlePickSuggestion}
+            onDownload={handleDownloadSuggestion}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fireflies-center-panel">
@@ -1311,6 +1404,8 @@ interface VideoSectionProps {
   onDrag: (e: React.DragEvent) => void;
   onDrop: (e: React.DragEvent) => void;
   onFileInput: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  showHeader?: boolean;
+  minimal?: boolean;
 }
 
 const VideoSection = ({
@@ -1324,6 +1419,8 @@ const VideoSection = ({
   onDrag,
   onDrop,
   onFileInput,
+  showHeader = true,
+  minimal = false,
 }: VideoSectionProps) => {
   const [localUrlInput, setLocalUrlInput] = useState('');
   const [showUrlInput, setShowUrlInput] = useState(false);
@@ -1339,21 +1436,23 @@ const VideoSection = ({
   if (recordingUrl) {
     // Show video player
     return (
-      <div className="fireflies-video-section">
-        <div className="fireflies-video-header">
-          <div className="fireflies-video-title">
-            <Video size={18} />
-            <span>Video Recording</span>
+      <div className={`fireflies-video-section ${minimal ? 'fireflies-video-section--minimal' : ''}`}>
+        {showHeader && (
+          <div className="fireflies-video-header">
+            <div className="fireflies-video-title">
+              <Video size={18} />
+              <span>Video Recording</span>
+            </div>
+            <button
+              className="fireflies-video-delete-btn"
+              onClick={onDelete}
+              title="Xóa video"
+              type="button"
+            >
+              <Trash2 size={16} />
+            </button>
           </div>
-          <button
-            className="fireflies-video-delete-btn"
-            onClick={onDelete}
-            title="Xóa video"
-            type="button"
-          >
-            <Trash2 size={16} />
-          </button>
-        </div>
+        )}
         <div className="fireflies-video-player">
           <video
             src={recordingUrl}
@@ -1370,13 +1469,15 @@ const VideoSection = ({
 
   // Show upload zone
   return (
-    <div className="fireflies-video-section">
-      <div className="fireflies-video-header">
-        <div className="fireflies-video-title">
-          <Video size={18} />
-          <span>Video Recording</span>
+    <div className={`fireflies-video-section ${minimal ? 'fireflies-video-section--minimal' : ''}`}>
+      {showHeader && (
+        <div className="fireflies-video-header">
+          <div className="fireflies-video-title">
+            <Video size={18} />
+            <span>Video Recording</span>
+          </div>
         </div>
-      </div>
+      )}
       <div
         className={`fireflies-video-upload ${dragActive ? 'drag-active' : ''} ${isUploading || isProcessing ? 'uploading' : ''}`}
         onDragEnter={onDrag}
@@ -1433,7 +1534,7 @@ const VideoSection = ({
                   onClick={() => setShowUrlInput(true)}
                   style={{ fontSize: 12 }}
                 >
-                  Hoặc nhập URL video trực tiếp
+                  Hoặc nhập URL video trực tiếp -&gt; mở rộng ra
                 </button>
               ) : (
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'center' }}>
@@ -1470,6 +1571,53 @@ const VideoSection = ({
             </div>
           </>
         )}
+      </div>
+    </div>
+  );
+};
+
+const SuggestedVideoCarousel = ({
+  suggestions,
+  onPick,
+  onDownload,
+}: {
+  suggestions: VideoSuggestion[];
+  onPick: (suggestion: VideoSuggestion) => void;
+  onDownload: (suggestion: VideoSuggestion) => void;
+}) => {
+  if (!suggestions.length) return null;
+
+  return (
+    <div className="fireflies-suggest">
+      <div className="fireflies-suggest-header">Gợi ý video bài giảng</div>
+      <div className="fireflies-suggest-carousel">
+        {suggestions.map((item) => (
+          <div key={item.id} className="fireflies-suggest-card">
+            <div className="fireflies-suggest-thumb" style={{ background: item.accent }} />
+            <div className="fireflies-suggest-title">{item.title}</div>
+            <div className="fireflies-suggest-meta">
+              {item.channel} • {item.duration}
+            </div>
+            <div className="fireflies-suggest-overlay">
+              <button
+                type="button"
+                className="fireflies-suggest-action"
+                onClick={() => onDownload(item)}
+              >
+                <Download size={14} />
+                Download
+              </button>
+              <button
+                type="button"
+                className="fireflies-suggest-action fireflies-suggest-action--primary"
+                onClick={() => onPick(item)}
+              >
+                <Play size={14} />
+                Choose this record
+              </button>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );

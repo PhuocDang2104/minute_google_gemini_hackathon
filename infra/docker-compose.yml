@@ -24,10 +24,12 @@ services:
       dockerfile: backend/Dockerfile
     container_name: minute_backend
     restart: unless-stopped
+    working_dir: /app
     environment:
       ENV: development
       DATABASE_URL: postgresql+psycopg2://minute:minute@postgres:5432/minute
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      PYTHONPATH: /app
     volumes:
       - ../backend:/app
       - ../infra/env:/app/infra/env:ro
@@ -36,6 +38,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    command: [ "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload" ]
+    command: [ "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--app-dir", "/app" ]
 volumes:
   postgres_data:

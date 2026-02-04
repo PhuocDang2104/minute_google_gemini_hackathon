@@ -10,13 +10,13 @@ export const translations: Record<Language, TranslationKeys> = {
 };
 
 export const languageNames: Record<Language, string> = {
-  vi: 'Tiếng Việt',
+  vi: 'Ti?ng Vi?t',
   en: 'English',
 };
 
 export const languageFlags: Record<Language, string> = {
-  vi: '🇻🇳',
-  en: '🇺🇸',
+  vi: '????',
+  en: '????',
 };
 
 // Get nested translation value
@@ -26,7 +26,7 @@ export function getTranslation(
 ): string {
   const keys = key.split('.');
   let result: unknown = translations;
-  
+
   for (const k of keys) {
     if (result && typeof result === 'object' && k in result) {
       result = (result as Record<string, unknown>)[k];
@@ -34,9 +34,8 @@ export function getTranslation(
       return key; // Return key if translation not found
     }
   }
-  
+
   return typeof result === 'string' ? result : key;
 }
 
 export { vi, en };
-
