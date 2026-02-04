@@ -166,10 +166,6 @@ vnpt_ai_hackathon/
 ### Docker (backend + DB, recommended)
 Prerequisites: Docker 24+, Docker Compose, ports `8000` (API) và `5433` (Postgres) trống.
 
-```powershell
-cd infra
-docker compose up -d --build
-```
 ```bash
 cd infra
 docker compose up -d --build

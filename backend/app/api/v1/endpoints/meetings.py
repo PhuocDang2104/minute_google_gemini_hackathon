@@ -51,6 +51,20 @@ def create_meeting(
     return meeting_service.create_meeting(db=db, payload=payload)
 
 
+@router.post('/quick', response_model=Meeting, status_code=201)
+def quick_create_meeting(
+    db: Session = Depends(get_db)
+):
+    """
+    Quick-create a new meeting with auto-generated title.
+    Title format: "Untitled YYYY-MM-DD HH:MM"
+    """
+    now = datetime.now()
+    title = f"Untitled {now.strftime('%Y-%m-%d %H:%M')}"
+    payload = MeetingCreate(title=title)
+    return meeting_service.create_meeting(db=db, payload=payload)
+
+
 @router.get('/{meeting_id}', response_model=MeetingWithParticipants)
 def get_meeting(
     meeting_id: str,

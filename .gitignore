@@ -9,6 +9,7 @@ env/
 .env
 .env.*
 .env.local
+infra/env/.env.local
 .python-version
 *.pyo
 *.pyd
@@ -17,6 +18,8 @@ pip-log.txt
 pip-delete-this-directory.txt
 pyannote-env/
 notebook/
+_archive/
+.agent/
 
 
 # Backend virtual environment

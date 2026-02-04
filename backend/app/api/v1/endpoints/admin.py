@@ -16,7 +16,6 @@ from app.schemas.action_item import ActionItemList, ActionItemResponse, ActionIt
 from app.schemas.action_item import ActionItemCreate
 from app.services import (
     user_service,
-    auth_service,
     document_service,
     meeting_service,
     action_item_service,
@@ -80,28 +79,21 @@ def admin_update_status(
     return updated
 
 
-@router.post('/users', response_model=UserRegisterResponse, status_code=status.HTTP_201_CREATED)
+@router.post('/users', response_model=User, status_code=status.HTTP_201_CREATED)
 def admin_create_user(
     payload: AdminCreateUser,
     db: Session = Depends(get_db)
 ):
     """Admin: create a new user"""
-    register_data = payload.model_dump()
-    user_resp = auth_service.register_user(
-        db,
-        UserRegister(
-            email=register_data['email'],
-            password=register_data['password'],
-            display_name=register_data['display_name'],
-            department_id=register_data.get('department_id'),
-            organization_id=register_data.get('organization_id'),
-        )
+    user = user_service.create_user(
+        db=db,
+        email=payload.email,
+        display_name=payload.display_name,
+        department_id=payload.department_id,
+        organization_id=payload.organization_id,
+        role=payload.role or 'user',
     )
-    # If admin set role, update after creation
-    if payload.role and payload.role != 'user':
-        user_service.update_user_role(db, user_resp.id, payload.role)
-        user_resp.role = payload.role
-    return user_resp
+    return user
 
 
 # ============================================

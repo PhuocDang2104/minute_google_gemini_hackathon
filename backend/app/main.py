@@ -4,9 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from app.core.config import get_settings
 from app.api.v1.endpoints import (
-    auth,
     admin,
-    projects,
     users,
     sessions,
     meetings,
@@ -15,7 +13,6 @@ from app.api.v1.endpoints import (
     knowledge,
     diarization,
     in_meeting,
-    pre_meeting,
     post_meeting,
     rag,
     agents,
@@ -42,8 +39,8 @@ def get_cors_origins():
 
 app = FastAPI(
     title=settings.project_name,
-    description="MeetMate - AI-powered Meeting Assistant",
-    version="1.0.0",
+    description="Minute - AI Meeting & Study Copilot",
+    version="2.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
 )
@@ -57,9 +54,7 @@ app.add_middleware(
 )
 
 app.include_router(health.router, prefix=f"{settings.api_v1_prefix}/health", tags=['health'])
-app.include_router(auth.router, prefix=f"{settings.api_v1_prefix}/auth", tags=['auth'])
 app.include_router(admin.router, prefix=f"{settings.api_v1_prefix}/admin", tags=['admin'])
-app.include_router(projects.router, prefix=f"{settings.api_v1_prefix}/projects", tags=['projects'])
 app.include_router(users.router, prefix=f"{settings.api_v1_prefix}/users", tags=['users'])
 app.include_router(sessions.router, prefix=f"{settings.api_v1_prefix}/sessions", tags=['sessions'])
 app.include_router(meetings.router, prefix=f"{settings.api_v1_prefix}/meetings", tags=['meetings'])
@@ -68,7 +63,6 @@ app.include_router(agenda.router, prefix=f"{settings.api_v1_prefix}/agenda", tag
 app.include_router(knowledge.router, prefix=f"{settings.api_v1_prefix}/knowledge", tags=['knowledge'])
 # Diarization API temporarily disabled - using external service instead
 # app.include_router(diarization.router, prefix=f"{settings.api_v1_prefix}", tags=['diarization'])
-app.include_router(pre_meeting.router, prefix=f"{settings.api_v1_prefix}/pre-meeting", tags=['pre-meeting'])
 app.include_router(in_meeting.router, prefix=f"{settings.api_v1_prefix}/in-meeting", tags=['in-meeting'])
 app.include_router(post_meeting.router, prefix=f"{settings.api_v1_prefix}/post-meeting", tags=['post-meeting'])
 app.include_router(rag.router, prefix=f"{settings.api_v1_prefix}/rag", tags=['rag'])
@@ -91,4 +85,5 @@ app.mount("/files", StaticFiles(directory=str(upload_path)), name="files")
 
 @app.get('/')
 def root():
-    return {"message": "MeetMate backend scaffold running"}
+    return {"message": "Minute API v2 running"}
+

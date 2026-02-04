@@ -3,7 +3,6 @@ Services module - Business logic layer
 """
 from . import (
     ai_service,
-    auth_service,
     chat_service,
     document_service,
     agenda_service,
@@ -21,7 +20,6 @@ from . import (
 
 __all__ = [
     'ai_service',
-    'auth_service',
     'chat_service',
     'document_service',
     'agenda_service',

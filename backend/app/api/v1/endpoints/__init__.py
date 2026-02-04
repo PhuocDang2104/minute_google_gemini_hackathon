@@ -1,5 +1,4 @@
 from . import (
-    auth,
     users,
     sessions,
     meetings,
@@ -8,7 +7,6 @@ from . import (
     knowledge,
     diarization,
     in_meeting,
-    pre_meeting,
     post_meeting,
     rag,
     agents,
@@ -23,7 +21,6 @@ from . import (
 )
 
 __all__ = [
-    'auth',
     'users',
     'sessions',
     'meetings',
@@ -32,7 +29,6 @@ __all__ = [
     'knowledge',
     'diarization',
     'in_meeting',
-    'pre_meeting',
     'post_meeting',
     'rag',
     'agents',
