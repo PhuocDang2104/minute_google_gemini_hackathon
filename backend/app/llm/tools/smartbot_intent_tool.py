@@ -3,7 +3,7 @@ import re
 from typing import Any, Dict, Optional, Tuple
 
 from app.core.config import get_settings
-from app.llm.gemini_client import get_gemini_client
+from app.llm.gemini_client import get_groq_client
 from app.llm.prompts.in_meeting_prompts import INTENT_PROMPT
 
 
@@ -33,7 +33,7 @@ def _parse_intent_payload(text: str) -> Optional[Dict[str, Any]]:
 
 
 def _llm_intent(text: str, lang: str | None) -> Optional[Tuple[str, Dict[str, Any]]]:
-    client = get_gemini_client()
+    client = get_groq_client()
     if not client:
         return None
     prompt = INTENT_PROMPT + f"\n\nLanguage: {lang or 'vi'}\nText:\n{text.strip()}"
