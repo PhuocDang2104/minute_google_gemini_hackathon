@@ -2,7 +2,7 @@ import uuid
 from sqlalchemy import Column, ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy import Float
-from app.db.base import Base
+from app.models.base import Base
 
 
 class Embedding(Base):

@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, DateTime, Boolean
 from sqlalchemy.sql import func
-from app.db.base import Base
+from app.models.base import Base
 
 class MarketingLead(Base):
     __tablename__ = "marketing_leads"

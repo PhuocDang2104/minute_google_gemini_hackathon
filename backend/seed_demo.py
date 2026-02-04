@@ -244,6 +244,85 @@ def seed_data():
         db.commit()
         print("Created Meeting Minutes")
         
+        # ---------------------------------------------------------
+        # ADDITIONAL SCENARIOS
+        # ---------------------------------------------------------
+
+        # Scenario 2: Study Session (No Record)
+        study_no_record = Meeting(
+            id=uuid.uuid4(),
+            title="Học Online: Lập trình Python cơ bản",
+            description="Buổi 1: Giới thiệu về Python và môi trường phát triển.",
+            organizer_id=users_map["Ông Đạt"].id,
+            project_id=None,
+            start_time=datetime.utcnow() + timedelta(days=1), # Future
+            end_time=datetime.utcnow() + timedelta(days=1, hours=2),
+            meeting_type="study_session",
+            location="Google Meet",
+            phase="pre"
+        )
+        db.add(study_no_record)
+        print("Created Scenario 2: Study (No Record)")
+
+        # Scenario 3: Study Session (With Record + Quiz)
+        study_with_record = Meeting(
+            id=uuid.uuid4(),
+            title="Học Online: Machine Learning Advanced",
+            description="Chuyên đề: Transformer Architecture và ứng dụng trong NLP.",
+            organizer_id=users_map["Ông Đạt"].id,
+            project_id=None,
+            start_time=datetime.utcnow() - timedelta(days=2), # Past
+            end_time=datetime.utcnow() - timedelta(days=2, hours=2),
+            meeting_type="study_session",
+            location="Teams",
+            phase="post"
+        )
+        db.add(study_with_record)
+        
+        # Transcript for Study Session
+        study_transcript_text = [
+            ("Ông Đạt", "Chào mọi người, hôm nay chúng ta tìm hiểu về Transformer. Đây là kiến trúc nền tảng của các mô hình LLM hiện nay."),
+            ("Ông Đạt", "Cơ chế quan trọng nhất là Self-Attention, giúp mô hình hiểu ngữ cảnh của từ trong câu."),
+            ("Ông Phước", "Cho em hỏi Self-Attention khác gì với RNN truyền thống ạ?"),
+            ("Ông Đạt", "RNN xử lý tuần tự, còn Transformer xử lý song song nhờ Attention, nên nhanh hơn và bắt được sự phụ thuộc xa tốt hơn.")
+        ]
+        
+        base_time = 0.0
+        for idx, (speaker, txt) in enumerate(study_transcript_text):
+            duration = len(txt.split()) * 0.6
+            chunk = TranscriptChunk(
+                id=uuid.uuid4(),
+                meeting_id=study_with_record.id,
+                chunk_index=idx,
+                speaker=speaker,
+                text=txt,
+                time_start=base_time,
+                time_end=base_time + duration,
+                confidence=0.98
+            )
+            db.add(chunk)
+            base_time += duration
+
+        print("Created Scenario 3: Study (With Record)")
+
+        # Scenario 4: Meeting (No Record)
+        meeting_no_record = Meeting(
+            id=uuid.uuid4(),
+            title="Họp Dự án: Triển khai CRM",
+            description="Kick-off dự án CRM mới cho khối Khách hàng doanh nghiệp.",
+            organizer_id=users_map["Ông Quân"].id,
+            project_id=project.id,
+            start_time=datetime.utcnow() + timedelta(hours=5), # Upcoming today
+            end_time=datetime.utcnow() + timedelta(hours=6),
+            meeting_type="project_meeting",
+            location="Phòng họp 101",
+            phase="pre"
+        )
+        db.add(meeting_no_record)
+        print("Created Scenario 4: Meeting (No Record)")
+
+        db.commit()
+        
         print("SEED COMPLETED SUCCESSFULLY!")
 
     except Exception as e:

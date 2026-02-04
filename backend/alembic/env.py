@@ -1,11 +1,20 @@
+import os
 from logging.config import fileConfig   # Cấu hình logging
 from typing_extensions import runtime
 from sqlalchemy import engine_from_config   #Tạo SQLAlchemy engine
 from sqlalchemy import pool # Quản lý kết nối DB
 from alembic import context # Alembic migration context
+from app.core.config import get_settings
 
 # this is the Alembic Config object, which provides access to the values within the .ini file in use.
 config = context.config
+
+settings = get_settings()
+# Override sqlalchemy.url with environment variable
+database_url = settings.database_url
+if database_url and database_url.startswith("postgres://"):
+    database_url = database_url.replace("postgres://", "postgresql://", 1)
+config.set_main_option("sqlalchemy.url", database_url)
 
 if config.config_file_name is not None:
     try:
@@ -28,8 +37,12 @@ def run_migrations_offline():
 
 
 def run_migrations_online():
+    # Handle config section safely
+    configuration = config.get_section(config.config_ini_section) or {}
+    configuration["sqlalchemy.url"] = database_url
+    
     connectable = engine_from_config(
-        config.get_section(config.config_ini_section),
+        configuration,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )

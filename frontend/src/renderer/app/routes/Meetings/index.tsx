@@ -1,24 +1,25 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
-  Users,
-  MapPin,
   FolderOpen,
-  Tag,
   Plus,
   RefreshCw,
   AlertCircle,
+  Calendar,
+  Clock,
+  Layout,
+  BookOpen, // For Study Session
+  Users, // For Meeting
 } from 'lucide-react'
 import {
   meetings as mockMeetings,
   formatTime,
   formatDate,
-  getMeetingTypeLabel,
-  getPhaseLabel,
 } from '../../../store/mockData'
 import MeetingsViewToggle from '../../../components/MeetingsViewToggle'
 import { meetingsApi } from '../../../lib/api/meetings'
 import type { Meeting, MeetingPhase } from '../../../shared/dto/meeting'
+import { MEETING_TYPE_LABELS } from '../../../shared/dto/meeting'
 import { USE_API } from '../../../config/env'
 
 const Meetings = () => {
@@ -26,22 +27,22 @@ const Meetings = () => {
   const [meetings, setMeetings] = useState<Meeting[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'all' | 'today' | 'week'>('all')
 
   const fetchMeetings = useCallback(async () => {
-    // ... (fetch implementation remains same)
     if (!USE_API) {
+      // Mock data mapping
       setMeetings(mockMeetings.map(m => ({
         id: m.id,
         title: m.title,
         description: '',
-        meeting_type: m.meetingType as Meeting['meeting_type'],
+        meeting_type: m.meetingType as any,
         phase: m.phase as MeetingPhase,
         start_time: m.startTime.toISOString(),
         end_time: m.endTime.toISOString(),
+        created_at: m.startTime.toISOString(), // Fallback for mock
         location: m.location,
         project_id: undefined,
-      })))
+      })).sort((a, b) => new Date(b.created_at || b.start_time).getTime() - new Date(a.created_at || a.start_time).getTime()))
       setIsLoading(false)
       return
     }
@@ -51,21 +52,17 @@ const Meetings = () => {
 
     try {
       const response = await meetingsApi.list()
-      setMeetings(response.meetings)
+      const sorted = response.meetings.sort((a, b) => {
+        const timeA = new Date(a.created_at || a.start_time).getTime()
+        const timeB = new Date(b.created_at || b.start_time).getTime()
+        return timeB - timeA // Descending
+      })
+      setMeetings(sorted)
     } catch (err) {
       console.error('Failed to fetch meetings:', err)
       setError('Không thể tải danh sách cuộc họp. Vui lòng thử lại.')
-      setMeetings(mockMeetings.map(m => ({
-        id: m.id,
-        title: m.title,
-        description: '',
-        meeting_type: m.meetingType as Meeting['meeting_type'],
-        phase: m.phase as MeetingPhase,
-        start_time: m.startTime.toISOString(),
-        end_time: m.endTime.toISOString(),
-        location: m.location,
-        project_id: undefined,
-      })))
+      // Fallback to mock on error? Or just show error
+      // setMeetings([]) 
     } finally {
       setIsLoading(false)
     }
@@ -75,72 +72,17 @@ const Meetings = () => {
     fetchMeetings()
   }, [fetchMeetings])
 
-  // ... (lines 87-118 remain same: filteredMeetings, sortedMeetings, meetingsByPhase)
-
-  // Filter meetings by tab
-  const filteredMeetings = meetings.filter(m => {
-    if (activeTab === 'all') return true
-
-    const startTime = m.start_time ? new Date(m.start_time) : null
-    if (!startTime) return activeTab === 'all'
-
-    const now = new Date()
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000)
-    const weekEnd = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000)
-
-    if (activeTab === 'today') {
-      return startTime >= today && startTime < tomorrow
-    }
-    if (activeTab === 'week') {
-      return startTime >= today && startTime < weekEnd
-    }
-    return true
-  })
-
-  // Group meetings by phase
-  const sortedMeetings = [...filteredMeetings].sort((a, b) => {
-    const aTime = a.start_time ? new Date(a.start_time).getTime() : 0
-    const bTime = b.start_time ? new Date(b.start_time).getTime() : 0
-    return bTime - aTime
-  })
-
-  const meetingsByPhase = {
-    in: sortedMeetings.filter(m => m.phase === 'in'),
-    pre: sortedMeetings.filter(m => m.phase === 'pre'),
-    post: sortedMeetings.filter(m => m.phase === 'post'),
-  }
-
   return (
     <div>
       {/* Page Header */}
       <div className="page-header">
         <div>
-          <h1 className="page-header__title">Cuộc họp</h1>
-          <p className="page-header__subtitle">Quản lý tất cả cuộc họp của bạn</p>
+          <h1 className="page-header__title">Gần đây</h1>
+          <p className="page-header__subtitle">Danh sách các phiên làm việc gần nhất</p>
         </div>
         <div className="page-header__actions meetings-header__actions">
           <div className="meetings-header__filters">
-            <div className="tabs">
-              <button
-                className={`tabs__item ${activeTab === 'all' ? 'tabs__item--active' : ''}`}
-                onClick={() => setActiveTab('all')}
-              >
-                Tất cả
-              </button>
-              <button
-                className={`tabs__item ${activeTab === 'today' ? 'tabs__item--active' : ''}`}
-                onClick={() => setActiveTab('today')}
-              >
-                Hôm nay
-              </button>
-              <button
-                className={`tabs__item ${activeTab === 'week' ? 'tabs__item--active' : ''}`}
-                onClick={() => setActiveTab('week')}
-              >
-                Tuần này
-              </button>
-            </div>
+            {/* Removed Tabs as requested */}
             <MeetingsViewToggle />
           </div>
           <div className="meetings-header__actions-right">
@@ -188,105 +130,114 @@ const Meetings = () => {
           <FolderOpen className="empty-state__icon" />
           <h3 className="empty-state__title">Chưa có cuộc họp nào</h3>
           <p className="empty-state__description">
-            Bấm nút <Plus size={14} style={{ display: 'inline', margin: '0 2px' }} /> trên thanh bên để thêm cuộc họp mới
+            Bấm nút <Plus size={14} style={{ display: 'inline', margin: '0 2px' }} /> trên thanh bên để thêm phiên mới
           </p>
         </div>
       )}
 
-      {/* Live Meetings */}
-      {meetingsByPhase.in.length > 0 && (
-        <div className="mb-6">
-          <h2 style={{ fontSize: '14px', fontWeight: 600, marginBottom: 'var(--space-md)', display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
-            <span className="live-indicator">
-              <span className="live-indicator__dot"></span>
-              LIVE
-            </span>
-            Đang diễn ra
-          </h2>
-          <div className="meeting-list">
-            {meetingsByPhase.in.map(meeting => (
-              <MeetingCard key={meeting.id} meeting={meeting} />
+      {/* Meetings List */}
+      {!isLoading && meetings.length > 0 && (
+        <div className="meeting-list-container">
+          <div className="meeting-list-header" style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 200px 150px',
+            padding: '12px 16px',
+            borderBottom: '1px solid var(--border)',
+            color: 'var(--text-secondary)',
+            fontSize: '12px',
+            fontWeight: 600,
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em'
+          }}>
+            <div>Tên phiên</div>
+            <div>Loại</div>
+            <div>Ngày tạo</div>
+          </div>
+
+          <div className="meeting-list-body">
+            {meetings.map((meeting) => (
+              <SimpleMeetingRow key={meeting.id} meeting={meeting} />
             ))}
           </div>
         </div>
       )}
-
-      {/* Upcoming Meetings */}
-      {meetingsByPhase.pre.length > 0 && (
-        <div className="mb-6">
-          <h2 style={{ fontSize: '14px', fontWeight: 600, marginBottom: 'var(--space-md)', color: 'var(--text-secondary)' }}>
-            Sắp diễn ra
-          </h2>
-          <div className="meeting-list">
-            {meetingsByPhase.pre.map(meeting => (
-              <MeetingCard key={meeting.id} meeting={meeting} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Completed Meetings */}
-      {meetingsByPhase.post.length > 0 && (
-        <div className="mb-6">
-          <h2 style={{ fontSize: '14px', fontWeight: 600, marginBottom: 'var(--space-md)', color: 'var(--text-secondary)' }}>
-            Đã hoàn thành
-          </h2>
-          <div className="meeting-list">
-            {meetingsByPhase.post.map(meeting => (
-              <MeetingCard key={meeting.id} meeting={meeting} />
-            ))}
-          </div>
-        </div>
-      )}
-
-
     </div>
   )
 }
 
-interface MeetingCardProps {
+interface MeetingRowProps {
   meeting: Meeting
 }
 
-const MeetingCard = ({ meeting }: MeetingCardProps) => {
-  const startTime = meeting.start_time ? new Date(meeting.start_time) : null
+const SimpleMeetingRow = ({ meeting }: MeetingRowProps) => {
+  const createdDate = meeting.created_at ? new Date(meeting.created_at) : (meeting.start_time ? new Date(meeting.start_time) : new Date())
+
+  // Determine icon based on meeting type
+  const isStudy = meeting.meeting_type === 'study_session'
+  const TypeIcon = isStudy ? BookOpen : Users
 
   return (
     <Link
       to={`/app/meetings/${meeting.id}/detail`}
-      style={{ textDecoration: 'none', color: 'inherit' }}
+      style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}
     >
-      <div className="meeting-item">
-        <div className="meeting-item__time">
-          <div className="meeting-item__time-value">
-            {startTime ? formatTime(startTime) : '--:--'}
+      <div className="meeting-row" style={{
+        display: 'grid',
+        gridTemplateColumns: '1fr 200px 150px',
+        padding: '16px',
+        borderBottom: '1px solid var(--border)',
+        alignItems: 'center',
+        transition: 'background 0.2s',
+        cursor: 'pointer'
+      }}
+        onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-secondary)'}
+        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+      >
+        {/* Title Column */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{
+            width: '40px',
+            height: '40px',
+            borderRadius: '8px',
+            background: isStudy ? 'rgba(79, 70, 229, 0.1)' : 'rgba(16, 185, 129, 0.1)',
+            color: isStudy ? '#4F46E5' : '#10B981',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <TypeIcon size={20} />
           </div>
-          <div className="meeting-item__time-period">
-            {startTime ? formatDate(startTime) : 'TBD'}
+          <div>
+            <div style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: '4px' }}>
+              {meeting.title}
+            </div>
+            {/* Optional: Show status or duration as subtitle */}
+            <div style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'flex', gap: '6px' }}>
+              {meeting.phase === 'in' && <span style={{ color: 'var(--error)', fontWeight: 600 }}>● Live</span>}
+              <span>{formatTime(new Date(meeting.start_time))} - {formatTime(new Date(meeting.end_time))}</span>
+            </div>
           </div>
         </div>
-        <div className="meeting-item__divider"></div>
-        <div className="meeting-item__content">
-          <div className="meeting-item__title">{meeting.title}</div>
-          <div className="meeting-item__meta">
-            <span className="meeting-item__meta-item">
-              <Tag size={12} />
-              {getMeetingTypeLabel(meeting.meeting_type)}
-            </span>
-            {meeting.location && (
-              <span className="meeting-item__meta-item">
-                <MapPin size={12} />
-                {meeting.location}
-              </span>
-            )}
-          </div>
+
+        {/* Type Column */}
+        <div style={{ color: 'var(--text-secondary)', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <TagIcon type={meeting.meeting_type} />
+          <span>{MEETING_TYPE_LABELS[meeting.meeting_type] || meeting.meeting_type}</span>
         </div>
-        <span className={`meeting-item__phase meeting-item__phase--${meeting.phase}`}>
-          {meeting.phase === 'in' ? 'Live' : getPhaseLabel(meeting.phase)}
-        </span>
+
+        {/* Date Column */}
+        <div style={{ color: 'var(--text-secondary)', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <Calendar size={14} />
+          {formatDate(createdDate)}
+        </div>
       </div>
     </Link>
   )
+}
+
+const TagIcon = ({ type }: { type: string }) => {
+  // Simple dot or small icon
+  return <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor', opacity: 0.5 }}></div>
 }
 
 export default Meetings
