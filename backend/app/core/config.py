@@ -93,6 +93,11 @@ class Settings(BaseSettings):
         # Environment variables take priority over .env file
         env_priority='environment'
     )
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if self.database_url and self.database_url.startswith('postgres://'):
+            self.database_url = self.database_url.replace('postgres://', 'postgresql://', 1)
 
 
 @lru_cache()
