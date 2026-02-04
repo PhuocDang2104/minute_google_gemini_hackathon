@@ -114,7 +114,7 @@ export const PostMeetTabFireflies = ({ meeting, onRefresh }: PostMeetTabFireflie
     try {
       const templatesList = await minutesTemplateApi.list({ is_active: true });
 
-      console.log('Templates loaded:', templatesList);
+
 
       if (templatesList.templates && templatesList.templates.length > 0) {
         setTemplates(templatesList.templates);
@@ -960,14 +960,35 @@ const CenterPanel = ({
         {!minutes ? (
           <EmptyAIContent onGenerate={onGenerate} isGenerating={isGenerating} />
         ) : (
-          <SummaryContent
-            minutes={minutes}
-            isEditing={isEditingSummary}
-            editContent={editContent}
-            setEditContent={setEditContent}
-            onSave={handleSaveSummary}
-            onCancel={() => setIsEditingSummary(false)}
-          />
+          <>
+            <SummaryContent
+              minutes={minutes}
+              isEditing={isEditingSummary}
+              editContent={editContent}
+              setEditContent={setEditContent}
+              onSave={handleSaveSummary}
+              onCancel={() => setIsEditingSummary(false)}
+            />
+
+            {/* Conditional Content based on Meeting Type */}
+            {meeting.meeting_type === 'study_session' ? (
+              <StudyContent />
+            ) : (
+              <>
+                <div style={{ marginTop: 24, padding: '0 24px' }}>
+                  <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <CheckSquare size={18} color="#10b981" />
+                    Action Items
+                  </h3>
+                  <ActionItemsContent items={actionItems} />
+                </div>
+
+                <div style={{ marginTop: 24, padding: '0 24px', marginBottom: 40 }}>
+                  <DecisionsContent items={decisions} risks={risks} />
+                </div>
+              </>
+            )}
+          </>
         )}
       </div>
 
@@ -1792,6 +1813,81 @@ const highlightText = (text: string, query: string) => {
     ) : (
       part
     )
+  );
+};
+
+const StudyContent = () => {
+  return (
+    <div style={{ padding: '0 24px', marginTop: 24, paddingBottom: 40 }}>
+      {/* Notes Section */}
+      <div className="fireflies-section" style={{ marginBottom: 32 }}>
+        <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Tag size={18} color="#8b5cf6" />
+          Khái niệm & Ghi chú quan trọng
+        </h3>
+        <div className="items-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
+          <div className="item-card note" style={{ background: 'white', padding: 16, borderRadius: 8, border: '1px solid #e5e7eb', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+            <div className="item-header" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+              <span className="badge high" style={{ background: '#e0e7ff', color: '#4338ca', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600 }}>KHÁI NIỆM</span>
+              <span className="item-owner" style={{ fontSize: 12, color: '#9ca3af' }}>04:20</span>
+            </div>
+            <div className="item-desc" style={{ fontWeight: 600, marginBottom: 8 }}>Microservices Architecture</div>
+            <div className="item-meta" style={{ fontSize: 13, color: '#4b5563', lineHeight: 1.5 }}>
+              Là kiến trúc chia nhỏ ứng dụng thành các service độc lập, giao tiếp qua API.
+            </div>
+            <div className="item-meta" style={{ marginTop: 8, fontSize: 12, color: '#666', fontStyle: 'italic', background: '#f9fafb', padding: 8, borderRadius: 4 }}>
+              Ví dụ: Tách module Payment và User thành 2 service riêng biệt.
+            </div>
+          </div>
+
+          <div className="item-card note" style={{ background: 'white', padding: 16, borderRadius: 8, border: '1px solid #e5e7eb', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+            <div className="item-header" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+              <span className="badge medium" style={{ background: '#fef3c7', color: '#d97706', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600 }}>LƯU Ý</span>
+              <span className="item-owner" style={{ fontSize: 12, color: '#9ca3af' }}>12:15</span>
+            </div>
+            <div className="item-desc" style={{ fontWeight: 600, marginBottom: 8 }}>Event Consistency</div>
+            <div className="item-meta" style={{ fontSize: 13, color: '#4b5563', lineHeight: 1.5 }}>
+              Cần sử dụng cơ chế Eventual Consistency khi thiết kế hệ thống phân tán để đảm bảo tính nhất quán dữ liệu giữa các service.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Quiz Section */}
+      <div className="fireflies-section">
+        <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <CheckSquare size={18} color="#f59e0b" />
+          Trắc nghiệm củng cố (Quiz)
+        </h3>
+        <div className="items-grid">
+          <div className="item-card quiz" style={{ background: 'white', padding: 20, borderRadius: 8, border: '1px solid #e5e7eb', borderLeft: '4px solid #f59e0b', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+            <div className="item-desc" style={{ marginBottom: 16, fontSize: 15 }}><strong>Câu 1: Lợi ích chính của việc sử dụng Microservices so với Monolithic là gì?</strong></div>
+            <div className="quiz-options" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <label style={{ display: 'flex', gap: 12, fontSize: 14, cursor: 'pointer', alignItems: 'flex-start' }}>
+                <input type="radio" name="q1" style={{ marginTop: 3 }} />
+                <span>Dễ dàng deploy và scale độc lập từng service, phù hợp với team Agile.</span>
+              </label>
+              <label style={{ display: 'flex', gap: 12, fontSize: 14, cursor: 'pointer', alignItems: 'flex-start' }}>
+                <input type="radio" name="q1" style={{ marginTop: 3 }} />
+                <span>Giảm độ phức tạp của toàn bộ hệ thống ngay từ đầu.</span>
+              </label>
+              <label style={{ display: 'flex', gap: 12, fontSize: 14, cursor: 'pointer', alignItems: 'flex-start' }}>
+                <input type="radio" name="q1" style={{ marginTop: 3 }} />
+                <span>Tăng tốc độ query dữ liệu do không cần join bảng.</span>
+              </label>
+              <label style={{ display: 'flex', gap: 12, fontSize: 14, cursor: 'pointer', alignItems: 'flex-start' }}>
+                <input type="radio" name="q1" style={{ marginTop: 3 }} />
+                <span>Không yêu cầu quản lý transaction giữa các service.</span>
+              </label>
+            </div>
+            <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px dashed #e5e7eb', display: 'flex', justifyContent: 'flex-end' }}>
+              <button className="btn btn--sm btn--ghost" style={{ fontSize: 13 }}>Xem giải thích</button>
+              <button className="btn btn--sm btn--primary" style={{ marginLeft: 8, fontSize: 13 }}>Gửi câu trả lời</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 };
 

@@ -6,7 +6,7 @@ import { MEETING_TYPE_LABELS } from '../../../shared/dto/meeting';
 import { meetingsApi } from '../../../lib/api/meetings';
 
 interface CreateMeetingFormProps {
-  onSuccess: () => void;
+  onSuccess: (meetingId: string) => void;
   onCancel: () => void;
 }
 
@@ -49,11 +49,11 @@ interface FormErrors {
 export const CreateMeetingForm = ({ onSuccess, onCancel }: CreateMeetingFormProps) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   const [formData, setFormData] = useState<FormData>({
     title: '',
     description: '',
-    meeting_type: 'weekly_status',
+    meeting_type: 'project_meeting',
     project_id: '',
     start_date: '',
     start_time: '',
@@ -62,8 +62,40 @@ export const CreateMeetingForm = ({ onSuccess, onCancel }: CreateMeetingFormProp
     location: '',
     teams_link: '',
   });
-  
+
   const [errors, setErrors] = useState<FormErrors>({});
+
+  /* Step 1: Mode Selection State */
+  const [step, setStep] = useState<'selection' | 'creating'>('selection');
+
+  const handleQuickCreate = async (type: MeetingType) => {
+    setIsSubmitting(true);
+    setStep('creating');
+
+    try {
+      const now = new Date();
+      // Format as "Untitled - HH:MM DD/MM/YYYY" or similar, but simplified
+      const defaultTitle = `Untitled ${type === 'study_session' ? 'Session' : 'Meeting'} - ${now.toLocaleString('vi-VN')}`;
+
+      const payload: MeetingCreate = {
+        title: defaultTitle,
+        meeting_type: type,
+        start_time: now.toISOString(),
+        // Default 1 hour duration
+        end_time: new Date(now.getTime() + 60 * 60 * 1000).toISOString(),
+      };
+
+      const response = await meetingsApi.create(payload);
+      onSuccess(response.id);
+    } catch (err) {
+      console.error('Failed to quick create meeting:', err);
+      // Fallback to error state in selection screen
+      setIsSubmitting(false);
+      setStep('selection');
+      // Show simple alert for now as we don't have global toast
+      alert('Không thể tạo nhanh cuộc họp. Vui lòng thử lại.');
+    }
+  };
 
   const handleChange = (field: keyof FormData, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -73,218 +105,127 @@ export const CreateMeetingForm = ({ onSuccess, onCancel }: CreateMeetingFormProp
     }
   };
 
-  const validate = (): boolean => {
-    const newErrors: FormErrors = {};
-    
-    if (!formData.title.trim()) {
-      newErrors.title = 'Vui lòng nhập tiêu đề cuộc họp';
-    }
-    
-    if (!formData.start_date) {
-      newErrors.start_date = 'Vui lòng chọn ngày bắt đầu';
-    }
-    
-    if (!formData.start_time) {
-      newErrors.start_time = 'Vui lòng chọn giờ bắt đầu';
-    }
-    
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
+  if (step === 'creating') {
+    return (
+      <div className="mode-selection-container" style={{ textAlign: 'center', padding: '60px 0' }}>
+        <Loader2 size={48} className="spinner" style={{ animation: 'spin 1s linear infinite', color: '#6366f1', margin: '0 auto 24px' }} />
+        <h3 style={{ fontSize: 18, color: 'var(--text-primary)' }}>Đang tạo phiên làm việc mới...</h3>
+        <p style={{ color: 'var(--text-secondary)', marginTop: 8 }}>Vui lòng đợi trong giây lát</p>
+      </div>
+    );
+  }
 
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    
-    if (!validate()) return;
-    
-    setIsSubmitting(true);
-    setError(null);
-    
-    try {
-      // Build start_time and end_time ISO strings
-      const startDateTime = formData.start_date && formData.start_time
-        ? new Date(`${formData.start_date}T${formData.start_time}`).toISOString()
-        : undefined;
-      
-      const endDateTime = formData.end_date && formData.end_time
-        ? new Date(`${formData.end_date}T${formData.end_time}`).toISOString()
-        : formData.start_date && formData.start_time
-          ? new Date(new Date(`${formData.start_date}T${formData.start_time}`).getTime() + 60 * 60 * 1000).toISOString()
-          : undefined;
-      
-      const payload: MeetingCreate = {
-        title: formData.title.trim(),
-        description: formData.description.trim() || undefined,
-        meeting_type: formData.meeting_type,
-        // organizer_id is optional - will be set when auth is implemented
-        organizer_id: undefined,
-        project_id: formData.project_id || undefined,
-        start_time: startDateTime,
-        end_time: endDateTime,
-        location: formData.location.trim() || undefined,
-        teams_link: formData.teams_link.trim() || undefined,
-      };
-      
-      await meetingsApi.create(payload);
-      onSuccess();
-    } catch (err) {
-      console.error('Failed to create meeting:', err);
-      setError(err instanceof Error ? err.message : 'Không thể tạo cuộc họp. Vui lòng thử lại.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  // Get today's date for min attribute
-  const today = new Date().toISOString().split('T')[0];
-
+  // Quick Create Selection Screen
   return (
-    <form onSubmit={handleSubmit}>
-      {error && (
-        <div style={{
-          padding: 'var(--space-md)',
-          background: 'var(--error-subtle)',
-          borderRadius: 'var(--radius-sm)',
-          marginBottom: 'var(--space-lg)',
-          fontSize: '13px',
-          color: 'var(--error)',
-          border: '1px solid var(--error)',
-        }}>
-          {error}
-        </div>
-      )}
+    <div className="mode-selection-container" style={{ textAlign: 'center', padding: '20px 0' }}>
+      <h3 style={{ marginBottom: 24, fontSize: 18, color: 'var(--text-primary)' }}>Bạn muốn tạo loại phiên làm việc nào?</h3>
 
-      {/* Title */}
-      <FormField label="Tiêu đề cuộc họp" required error={errors.title}>
-        <Input
-          type="text"
-          placeholder="VD: Weekly Status - Mobile Banking Sprint 24"
-          value={formData.title}
-          onChange={(e) => handleChange('title', e.target.value)}
-          error={!!errors.title}
-          autoFocus
-        />
-      </FormField>
-
-      {/* Description */}
-      <FormField label="Mô tả">
-        <Textarea
-          placeholder="Mô tả ngắn gọn nội dung và mục tiêu cuộc họp..."
-          value={formData.description}
-          onChange={(e) => handleChange('description', e.target.value)}
-          rows={3}
-        />
-      </FormField>
-
-      {/* Meeting Type & Project */}
-      <div className="form-row">
-        <FormField label="Loại cuộc họp">
-          <Select
-            value={formData.meeting_type}
-            onChange={(e) => handleChange('meeting_type', e.target.value)}
-            options={MEETING_TYPE_OPTIONS}
-          />
-        </FormField>
-        
-        <FormField label="Dự án">
-          <Select
-            value={formData.project_id}
-            onChange={(e) => handleChange('project_id', e.target.value)}
-            options={PROJECT_OPTIONS}
-          />
-        </FormField>
-      </div>
-
-      {/* Date & Time */}
-      <div className="form-row">
-        <FormField label="Ngày bắt đầu" required error={errors.start_date}>
-          <Input
-            type="date"
-            value={formData.start_date}
-            onChange={(e) => handleChange('start_date', e.target.value)}
-            min={today}
-            error={!!errors.start_date}
-          />
-        </FormField>
-        
-        <FormField label="Giờ bắt đầu" required error={errors.start_time}>
-          <Input
-            type="time"
-            value={formData.start_time}
-            onChange={(e) => handleChange('start_time', e.target.value)}
-            error={!!errors.start_time}
-          />
-        </FormField>
-      </div>
-
-      <div className="form-row">
-        <FormField label="Ngày kết thúc">
-          <Input
-            type="date"
-            value={formData.end_date}
-            onChange={(e) => handleChange('end_date', e.target.value)}
-            min={formData.start_date || today}
-          />
-        </FormField>
-        
-        <FormField label="Giờ kết thúc">
-          <Input
-            type="time"
-            value={formData.end_time}
-            onChange={(e) => handleChange('end_time', e.target.value)}
-          />
-        </FormField>
-      </div>
-
-      {/* Location */}
-      <FormField label="Địa điểm">
-        <Input
-          type="text"
-          placeholder="VD: Phòng họp VIP - Tầng 15 hoặc Online - Microsoft Teams"
-          value={formData.location}
-          onChange={(e) => handleChange('location', e.target.value)}
-        />
-      </FormField>
-
-      {/* Teams Link */}
-      <FormField label="Link Teams/Zoom">
-        <Input
-          type="url"
-          placeholder="https://teams.microsoft.com/l/meetup-join/..."
-          value={formData.teams_link}
-          onChange={(e) => handleChange('teams_link', e.target.value)}
-        />
-      </FormField>
-
-      {/* Actions */}
-      <div className="form-actions">
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
         <button
           type="button"
-          className="btn btn--secondary"
-          onClick={onCancel}
+          className="mode-card"
+          onClick={() => handleQuickCreate('project_meeting')}
           disabled={isSubmitting}
+          style={{
+            padding: '30px 20px',
+            border: '2px solid var(--border)',
+            borderRadius: '12px',
+            background: 'var(--bg-secondary)',
+            cursor: 'pointer',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 16,
+            transition: 'all 0.2s ease',
+            opacity: isSubmitting ? 0.7 : 1
+          }}
+          onMouseEnter={(e) => {
+            if (!isSubmitting) {
+              e.currentTarget.style.borderColor = '#6366f1';
+              e.currentTarget.style.background = '#e0e7ff';
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (!isSubmitting) {
+              e.currentTarget.style.borderColor = 'var(--border)';
+              e.currentTarget.style.background = 'var(--bg-secondary)';
+            }
+          }}
         >
-          Hủy
+          <div style={{
+            width: 60,
+            height: 60,
+            borderRadius: '50%',
+            background: '#e0e7ff',
+            color: '#4338ca',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <Users size={32} />
+          </div>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>Dự án / Công việc</div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Tạo ngay cuộc họp dự án mới</div>
+          </div>
         </button>
+
         <button
-          type="submit"
-          className="btn btn--primary"
+          type="button"
+          className="mode-card"
+          onClick={() => handleQuickCreate('study_session')}
           disabled={isSubmitting}
+          style={{
+            padding: '30px 20px',
+            border: '2px solid var(--border)',
+            borderRadius: '12px',
+            background: 'var(--bg-secondary)',
+            cursor: 'pointer',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 16,
+            transition: 'all 0.2s ease',
+            opacity: isSubmitting ? 0.7 : 1
+          }}
+          onMouseEnter={(e) => {
+            if (!isSubmitting) {
+              e.currentTarget.style.borderColor = '#8b5cf6';
+              e.currentTarget.style.background = '#ede9fe';
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (!isSubmitting) {
+              e.currentTarget.style.borderColor = 'var(--border)';
+              e.currentTarget.style.background = 'var(--bg-secondary)';
+            }
+          }}
         >
-          {isSubmitting ? (
-            <>
-              <Loader2 size={16} className="spinner" style={{ animation: 'spin 0.8s linear infinite' }} />
-              Đang tạo...
-            </>
-          ) : (
-            <>
-              <Calendar size={16} />
-              Tạo cuộc họp
-            </>
-          )}
+          <div style={{
+            width: 60,
+            height: 60,
+            borderRadius: '50%',
+            background: '#f3e8ff',
+            color: '#7e22ce',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <Calendar size={32} />
+          </div>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>Lớp học Online</div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Tạo ngay session học tập mới</div>
+          </div>
         </button>
       </div>
-    </form>
+
+      <div style={{ marginTop: 32, display: 'flex', justifyContent: 'center' }}>
+        <button type="button" className="btn btn--ghost" onClick={onCancel} disabled={isSubmitting}>
+          Hủy bỏ
+        </button>
+      </div>
+    </div>
   );
 };
 

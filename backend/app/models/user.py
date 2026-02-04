@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, ForeignKey, Text, Boolean, DateTime
+from sqlalchemy import Column, String, ForeignKey, Text, Boolean, DateTime, JSON
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from app.models.base import Base, TimestampMixin, UUIDMixin
@@ -51,6 +51,7 @@ class UserAccount(Base, UUIDMixin, TimestampMixin):
     avatar_url = Column(String)
     is_active = Column(Boolean, default=True)
     last_login_at = Column(DateTime(timezone=True))
+    preferences = Column(JSON, default={})  # { "model": "gemini", "tone": "formal", "custom_instructions": "..." }
     
     # Relationships
     organization = relationship("Organization", back_populates="users")

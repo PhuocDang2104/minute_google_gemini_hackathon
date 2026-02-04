@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   Users,
   MapPin,
@@ -16,23 +16,21 @@ import {
   getMeetingTypeLabel,
   getPhaseLabel,
 } from '../../../store/mockData'
-import { Modal } from '../../../components/ui/Modal'
-import { CreateMeetingForm } from '../../../features/meetings/components/CreateMeetingForm'
 import MeetingsViewToggle from '../../../components/MeetingsViewToggle'
 import { meetingsApi } from '../../../lib/api/meetings'
 import type { Meeting, MeetingPhase } from '../../../shared/dto/meeting'
 import { USE_API } from '../../../config/env'
 
 const Meetings = () => {
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+  const navigate = useNavigate()
   const [meetings, setMeetings] = useState<Meeting[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'all' | 'today' | 'week'>('all')
 
   const fetchMeetings = useCallback(async () => {
+    // ... (fetch implementation remains same)
     if (!USE_API) {
-      // Use mock data
       setMeetings(mockMeetings.map(m => ({
         id: m.id,
         title: m.title,
@@ -50,14 +48,13 @@ const Meetings = () => {
 
     setIsLoading(true)
     setError(null)
-    
+
     try {
       const response = await meetingsApi.list()
       setMeetings(response.meetings)
     } catch (err) {
       console.error('Failed to fetch meetings:', err)
       setError('Không thể tải danh sách cuộc họp. Vui lòng thử lại.')
-      // Fallback to mock data
       setMeetings(mockMeetings.map(m => ({
         id: m.id,
         title: m.title,
@@ -78,23 +75,20 @@ const Meetings = () => {
     fetchMeetings()
   }, [fetchMeetings])
 
-  const handleCreateSuccess = () => {
-    setIsCreateModalOpen(false)
-    fetchMeetings() // Refresh the list
-  }
+  // ... (lines 87-118 remain same: filteredMeetings, sortedMeetings, meetingsByPhase)
 
   // Filter meetings by tab
   const filteredMeetings = meetings.filter(m => {
     if (activeTab === 'all') return true
-    
+
     const startTime = m.start_time ? new Date(m.start_time) : null
     if (!startTime) return activeTab === 'all'
-    
+
     const now = new Date()
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
     const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000)
     const weekEnd = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000)
-    
+
     if (activeTab === 'today') {
       return startTime >= today && startTime < tomorrow
     }
@@ -128,19 +122,19 @@ const Meetings = () => {
         <div className="page-header__actions meetings-header__actions">
           <div className="meetings-header__filters">
             <div className="tabs">
-              <button 
+              <button
                 className={`tabs__item ${activeTab === 'all' ? 'tabs__item--active' : ''}`}
                 onClick={() => setActiveTab('all')}
               >
                 Tất cả
               </button>
-              <button 
+              <button
                 className={`tabs__item ${activeTab === 'today' ? 'tabs__item--active' : ''}`}
                 onClick={() => setActiveTab('today')}
               >
                 Hôm nay
               </button>
-              <button 
+              <button
                 className={`tabs__item ${activeTab === 'week' ? 'tabs__item--active' : ''}`}
                 onClick={() => setActiveTab('week')}
               >
@@ -150,20 +144,13 @@ const Meetings = () => {
             <MeetingsViewToggle />
           </div>
           <div className="meetings-header__actions-right">
-            <button 
+            <button
               className="btn btn--secondary"
               onClick={fetchMeetings}
               disabled={isLoading}
               title="Làm mới"
             >
               <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
-            </button>
-            <button 
-              className="btn btn--primary"
-              onClick={() => setIsCreateModalOpen(true)}
-            >
-              <Plus size={16} />
-              Tạo cuộc họp
             </button>
           </div>
         </div>
@@ -201,7 +188,7 @@ const Meetings = () => {
           <FolderOpen className="empty-state__icon" />
           <h3 className="empty-state__title">Chưa có cuộc họp nào</h3>
           <p className="empty-state__description">
-            Bấm "Tạo cuộc họp" để thêm cuộc họp mới
+            Bấm nút <Plus size={14} style={{ display: 'inline', margin: '0 2px' }} /> trên thanh bên để thêm cuộc họp mới
           </p>
         </div>
       )}
@@ -252,18 +239,7 @@ const Meetings = () => {
         </div>
       )}
 
-      {/* Create Meeting Modal */}
-      <Modal
-        isOpen={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
-        title="Tạo cuộc họp mới"
-        size="lg"
-      >
-        <CreateMeetingForm
-          onSuccess={handleCreateSuccess}
-          onCancel={() => setIsCreateModalOpen(false)}
-        />
-      </Modal>
+
     </div>
   )
 }

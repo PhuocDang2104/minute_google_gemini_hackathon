@@ -9,7 +9,8 @@ import {
 } from 'lucide-react'
 import { currentUser, getInitials } from '../../store/mockData'
 import { getStoredUser } from '../../lib/api/auth'
-import { meetingsApi } from '../../lib/api/meetings'
+import { Modal } from '../../components/ui/Modal'
+import { CreateMeetingForm } from '../../features/meetings/components/CreateMeetingForm'
 
 interface NavItem {
   path: string
@@ -22,19 +23,12 @@ const Sidebar = () => {
   const navigate = useNavigate()
   const storedUser = getStoredUser()
   const displayUser = storedUser || currentUser
-  const [isCreating, setIsCreating] = useState(false)
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
 
-  const handleNewMeeting = async () => {
-    if (isCreating) return
-    setIsCreating(true)
-    try {
-      const meeting = await meetingsApi.quickCreate()
-      navigate(`/app/meetings/${meeting.id}`)
-    } catch (error) {
-      console.error('Failed to create meeting:', error)
-      alert('Không thể tạo cuộc họp mới. Vui lòng thử lại.')
-    } finally {
-      setIsCreating(false)
+  const handleCreateSuccess = (meetingId?: string) => {
+    setIsCreateModalOpen(false)
+    if (meetingId) {
+      navigate(`/app/meetings/${meetingId}/detail`)
     }
   }
 
@@ -70,16 +64,15 @@ const Sidebar = () => {
           <ul className="sidebar__nav-list">
             <li className="sidebar__nav-item">
               <button
-                onClick={handleNewMeeting}
-                disabled={isCreating}
+                onClick={() => setIsCreateModalOpen(true)}
                 className="sidebar__nav-link sidebar__nav-link--action"
-                style={{ width: '100%', textAlign: 'left', border: 'none', cursor: isCreating ? 'wait' : 'pointer' }}
+                style={{ width: '100%', textAlign: 'left', border: 'none', cursor: 'pointer' }}
               >
                 <span className="sidebar__nav-icon">
-                  {isCreating ? <Loader2 size={20} className="animate-spin" /> : <Plus size={20} />}
+                  <Plus size={20} />
                 </span>
                 <span className="sidebar__nav-label">
-                  {isCreating ? 'Đang tạo...' : 'Cuộc họp mới'}
+                  Cuộc họp mới
                 </span>
               </button>
             </li>
@@ -135,6 +128,19 @@ const Sidebar = () => {
           </div>
         </div>
       </div>
+
+      {/* Create Meeting Modal */}
+      <Modal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        title="Tạo phiên làm việc mới"
+        size="lg"
+      >
+        <CreateMeetingForm
+          onSuccess={handleCreateSuccess}
+          onCancel={() => setIsCreateModalOpen(false)}
+        />
+      </Modal>
     </aside>
   )
 }

@@ -2,7 +2,7 @@ from .user import Organization, Department, Project, UserAccount
 from .meeting import Meeting
 from .document import Document
 from .embedding import Embedding
-from .chat_session import ChatSession
+from .chat_session import ChatSession, ChatMessage
 from .marketing import MarketingLead
 from .adr import (
     TranscriptChunk,
@@ -14,6 +14,9 @@ from .adr import (
     AiEventLog,
     ToolSuggestion,
 )
+from .timeline import RecapSegment, VisualEvent
+from .summary import MeetingSummary
+from .study import NoteItem, QuizItem
 
 __all__ = [
     'Organization',
@@ -24,6 +27,7 @@ __all__ = [
     'Document',
     'Embedding',
     'ChatSession',
+    'ChatMessage',
     'TranscriptChunk',
     'TopicSegment',
     'ActionItem',
@@ -33,4 +37,9 @@ __all__ = [
     'AiEventLog',
     'ToolSuggestion',
     'MarketingLead',
+    'RecapSegment',
+    'VisualEvent',
+    'MeetingSummary',
+    'NoteItem',
+    'QuizItem',
 ]

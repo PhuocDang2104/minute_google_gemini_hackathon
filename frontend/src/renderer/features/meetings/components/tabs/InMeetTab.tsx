@@ -18,6 +18,7 @@ import type { MeetingWithParticipants } from '../../../../shared/dto/meeting';
 import { actionItems, decisions, formatDuration, risks } from '../../../../store/mockData';
 import { API_URL, USE_API } from '../../../../config/env';
 import { sessionsApi, diarizationApi } from '../../../../lib/api';
+import { RecordingControls } from '../RecordingControls';
 
 type WsStatus = 'idle' | 'connecting' | 'connected' | 'error' | 'disabled';
 interface InMeetTabProps {
@@ -78,10 +79,10 @@ const normalizeAdrActions = (items: any[]): AdrAction[] => {
     detail: item?.source_text
       ? String(item.source_text)
       : item?.sourceText
-      ? String(item.sourceText)
-      : item?.detail
-      ? String(item.detail)
-      : undefined,
+        ? String(item.sourceText)
+        : item?.detail
+          ? String(item.detail)
+          : undefined,
   }));
 };
 
@@ -94,10 +95,10 @@ const normalizeAdrDecisions = (items: any[]): AdrDecision[] => {
     detail: item?.rationale
       ? String(item.rationale)
       : item?.source_text
-      ? String(item.source_text)
-      : item?.sourceText
-      ? String(item.sourceText)
-      : undefined,
+        ? String(item.source_text)
+        : item?.sourceText
+          ? String(item.sourceText)
+          : undefined,
   }));
 };
 
@@ -111,10 +112,10 @@ const normalizeAdrRisks = (items: any[]): AdrRisk[] => {
     detail: item?.mitigation
       ? String(item.mitigation)
       : item?.source_text
-      ? String(item.source_text)
-      : item?.sourceText
-      ? String(item.sourceText)
-      : undefined,
+        ? String(item.source_text)
+        : item?.sourceText
+          ? String(item.sourceText)
+          : undefined,
   }));
 };
 
@@ -416,6 +417,9 @@ export const InMeetTab = ({
 
   return (
     <div className="inmeet-tab">
+      <div style={{ marginBottom: 16 }}>
+        <RecordingControls />
+      </div>
       <div className="inmeet-toggle" role="tablist" aria-label="In-meeting panels">
         <button
           type="button"
@@ -445,10 +449,10 @@ export const InMeetTab = ({
               finalTranscript={finalTranscript}
               diarizationSegments={diarizationSegments}
               joinPlatform={joinPlatform}
-            feedStatus={feedStatus}
-            lastTranscriptAt={lastTranscriptAt}
-            audioIngestToken={audioIngestToken}
-            tokenError={tokenError}
+              feedStatus={feedStatus}
+              lastTranscriptAt={lastTranscriptAt}
+              audioIngestToken={audioIngestToken}
+              tokenError={tokenError}
               isTokenLoading={isTokenLoading}
               onFetchAudioToken={handleFetchAudioToken}
             />
@@ -691,70 +695,70 @@ const LiveTranscriptPanel = ({
               </div>
             </div>
 
-          <div className="transcript-live-card" style={{ marginTop: 12 }}>
-            <div className="transcript-live-card__header">
-              <div className="transcript-live-card__title">
-                <div className="pill pill--ghost">Diarization timeline</div>
-                <span className="pill pill--accent">async</span>
+            <div className="transcript-live-card" style={{ marginTop: 12 }}>
+              <div className="transcript-live-card__header">
+                <div className="transcript-live-card__title">
+                  <div className="pill pill--ghost">Diarization timeline</div>
+                  <span className="pill pill--accent">async</span>
+                </div>
               </div>
-            </div>
-            <div className="topic-log">
-              {recentDiarization.length === 0 ? (
-                <div className="empty-state empty-state--inline">Chưa có segment nào.</div>
-              ) : (
-                recentDiarization.map((item, idx) => (
-                  <div key={`${item.speaker}-${idx}`} className="topic-log__item">
-                    <span
-                      className="topic-log__time"
-                      style={{
-                        color: speakerColors[item.speaker] || undefined,
-                        minWidth: 90,
-                      }}
-                    >
-                      {item.speaker}
-                    </span>
-                    <span className="topic-log__text">
-                      [{formatDuration(item.start || 0)} - {formatDuration(item.end || 0)}]{' '}
-                      conf={(item.confidence ?? 1).toFixed(2)}
-                    </span>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          <div className="transcript-mini-status">
-            <span className={`pill ws-chip ws-chip--${feedStatus}`}>
-              Frontend WS · {feedStatus}
-            </span>
-            <span className="transcript-mini-status__meta">{lastFrameLabel}</span>
-          </div>
-
-          <div className="transcript-live-card">
-            <div className="transcript-live-card__section">
-              <div className="live-signal-label">Recent utterances</div>
               <div className="topic-log">
-                {recentFinal.length === 0 ? (
-                  <div className="empty-state empty-state--inline">Chưa có câu final nào.</div>
+                {recentDiarization.length === 0 ? (
+                  <div className="empty-state empty-state--inline">Chưa có segment nào.</div>
                 ) : (
-                  recentFinal.map(item => (
-                    <div key={item.id} className="topic-log__item">
+                  recentDiarization.map((item, idx) => (
+                    <div key={`${item.speaker}-${idx}`} className="topic-log__item">
                       <span
                         className="topic-log__time"
-                        style={{ color: speakerColors[item.speaker] || undefined, minWidth: 80 }}
+                        style={{
+                          color: speakerColors[item.speaker] || undefined,
+                          minWidth: 90,
+                        }}
                       >
                         {item.speaker}
                       </span>
                       <span className="topic-log__text">
-                        [{formatDuration(item.time || 0)}] {item.text}
+                        [{formatDuration(item.start || 0)} - {formatDuration(item.end || 0)}]{' '}
+                        conf={(item.confidence ?? 1).toFixed(2)}
                       </span>
                     </div>
                   ))
                 )}
               </div>
             </div>
+
+            <div className="transcript-mini-status">
+              <span className={`pill ws-chip ws-chip--${feedStatus}`}>
+                Frontend WS · {feedStatus}
+              </span>
+              <span className="transcript-mini-status__meta">{lastFrameLabel}</span>
+            </div>
+
+            <div className="transcript-live-card">
+              <div className="transcript-live-card__section">
+                <div className="live-signal-label">Recent utterances</div>
+                <div className="topic-log">
+                  {recentFinal.length === 0 ? (
+                    <div className="empty-state empty-state--inline">Chưa có câu final nào.</div>
+                  ) : (
+                    recentFinal.map(item => (
+                      <div key={item.id} className="topic-log__item">
+                        <span
+                          className="topic-log__time"
+                          style={{ color: speakerColors[item.speaker] || undefined, minWidth: 80 }}
+                        >
+                          {item.speaker}
+                        </span>
+                        <span className="topic-log__text">
+                          [{formatDuration(item.time || 0)}] {item.text}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
         </div>
       </div>
     </div>

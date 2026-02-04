@@ -28,7 +28,7 @@ import { USE_API } from '../../../config/env';
 import { useChatContext } from '../../../contexts/ChatContext';
 
 // Tab Components
-import { PreMeetTab } from './tabs/PreMeetTab';
+import { InMeetTab } from './tabs/InMeetTab';
 import PostMeetTabFireflies from './tabs/PostMeetTabFireflies';
 import { PostMeetTab } from './tabs/PostMeetTabdrop';
 
@@ -432,8 +432,8 @@ export const MeetingDetail = () => {
   const isEnded = endTime && now > endTime;
 
   const tabs: { id: MeetingTabType; label: string; icon: React.ReactNode; description: string }[] = [
-    { id: 'pre', label: 'Chuẩn bị', icon: <FileText size={18} />, description: 'Agenda, Tài liệu, Thành viên' },
-    { id: 'post', label: 'Sau họp', icon: <CheckSquare size={18} />, description: 'Summary, MoM, Follow-up' },
+    { id: 'pre', label: 'Cuộc họp', icon: <Video size={18} />, description: 'Ghi âm & Transcript' },
+    { id: 'post', label: 'Tổng kết', icon: <CheckSquare size={18} />, description: 'Action Items & Recap' },
   ];
   const primaryJoinTarget = resolveJoinTarget();
   const sessionIdValue = streamSessionId || meeting.id;
@@ -604,9 +604,13 @@ export const MeetingDetail = () => {
       {/* Tab Content */}
       <main className="meeting-detail-v2__content">
         {activeTab === 'pre' && (
-          <PreMeetTab
+          <InMeetTab
             meeting={meeting}
+            joinPlatform={joinPlatform}
+            streamSessionId={streamSessionId || meeting.id}
+            initialAudioIngestToken={audioIngestToken}
             onRefresh={fetchMeeting}
+            onEndMeeting={handleEndMeeting}
           />
         )}
         {activeTab === 'post' && (

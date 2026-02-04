@@ -1,4 +1,5 @@
 import { useEffect, useCallback, ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 interface ModalProps {
@@ -48,8 +49,8 @@ export const Modal = ({
 
   if (!isOpen) return null;
 
-  return (
-    <div className="modal-overlay" onClick={onClose}>
+  return createPortal(
+    <div className="modal-overlay" onClick={onClose} style={{ zIndex: 9999 }}>
       <div
         className="modal"
         style={{ maxWidth: sizeClasses[size] }}
@@ -65,7 +66,8 @@ export const Modal = ({
         </div>
         <div className="modal__body">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

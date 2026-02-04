@@ -15,7 +15,7 @@ class Meeting(Base, UUIDMixin, TimestampMixin):
     organizer_id = Column(UUID(as_uuid=True), ForeignKey('user_account.id'))
     start_time = Column(DateTime(timezone=True))
     end_time = Column(DateTime(timezone=True))
-    meeting_type = Column(String)  # status, steering, risk, sprint
+    meeting_type = Column(String)  # project_meeting, study_session, etc.
     phase = Column(String, default='pre')  # pre / in / post
     project_id = Column(UUID(as_uuid=True), ForeignKey('project.id'))
     department_id = Column(UUID(as_uuid=True), ForeignKey('department.id'))
@@ -32,6 +32,16 @@ class Meeting(Base, UUIDMixin, TimestampMixin):
     action_items = relationship(ActionItem, back_populates="meeting", cascade="all, delete-orphan")
     decision_items = relationship(DecisionItem, back_populates="meeting", cascade="all, delete-orphan")
     risk_items = relationship(RiskItem, back_populates="meeting", cascade="all, delete-orphan")
+    
+    # Study Relationships
+    note_items = relationship("app.models.study.NoteItem", back_populates="meeting", cascade="all, delete-orphan")
+    quiz_items = relationship("app.models.study.QuizItem", back_populates="meeting", cascade="all, delete-orphan")
+    
+    # New Relationships
+    recap_segments = relationship("app.models.timeline.RecapSegment", back_populates="meeting", cascade="all, delete-orphan")
+    visual_events = relationship("app.models.timeline.VisualEvent", back_populates="meeting", cascade="all, delete-orphan")
+    summaries = relationship("app.models.summary.MeetingSummary", back_populates="meeting", cascade="all, delete-orphan")
+    chat_sessions = relationship("app.models.chat_session.ChatSession", back_populates="meeting", cascade="all, delete-orphan")
 
 
 class MeetingParticipant(Base):
