@@ -1,89 +1,125 @@
-"""
-LLM Client via Groq (replaces legacy Gemini usage)
-"""
 import json
 from typing import Optional, List, Dict, Any
+import google.generativeai as genai
 from groq import Groq
 from app.core.config import get_settings
 
 settings = get_settings()
 
+def configure_genai():
+    """Configure Google Generative AI if key is present"""
+    if settings.gemini_api_key:
+        genai.configure(api_key=settings.gemini_api_key)
+        return True
+    return False
 
-def get_gemini_client():
-    """Return Groq client (legacy name kept for compatibility)."""
+def get_groq_client():
+    """Return Groq client."""
     if not settings.groq_api_key:
         return None
     return Groq(api_key=settings.groq_api_key)
 
-
 def is_gemini_available() -> bool:
-    """Check if Groq API key is configured."""
-    if not settings.groq_api_key:
-        print("[Groq] No API key configured")
-        return False
-    try:
-        client = Groq(api_key=settings.groq_api_key)
-        client.chat.completions.create(
-            messages=[{"role": "user", "content": "ping"}],
-            model=settings.groq_model,
-            max_tokens=8,
-        )
+    """Check if either Google Gemini or Groq is configured."""
+    # Check Google Gemini
+    if settings.gemini_api_key:
         return True
-    except Exception as e:
-        print(f"[Groq] API error: {e}")
-        return False
-
+    
+    # Check Groq
+    if settings.groq_api_key:
+        return True
+        
+    print("[AI] No AI API key configured (Gemini or Groq)")
+    return False
 
 class GeminiChat:
-    """Chat wrapper using Groq chat completions."""
+    """Chat wrapper supporting Google Gemini and Groq."""
     
     def __init__(self, system_prompt: Optional[str] = None, mock_response: Optional[str] = None):
-        self.client = get_gemini_client()
         self.system_prompt = system_prompt or self._default_system_prompt()
-        self.mock_response = mock_response or "AI dang o che do mock, chua cau hinh GROQ_API_KEY."
+        self.mock_response = mock_response or "AI đang ở chế độ mock, chưa cấu hình API Key."
         self.history: List[Dict[str, str]] = []
+        
+        # Determine provider
+        self.provider = "mock"
+        if settings.gemini_api_key:
+            self.provider = "gemini"
+            configure_genai()
+            self.model_name = settings.gemini_model or "gemini-1.5-flash"
+            self.model = genai.GenerativeModel(
+                model_name=self.model_name,
+                system_instruction=self.system_prompt
+            )
+        elif settings.groq_api_key:
+            self.provider = "groq"
+            self.client = get_groq_client()
     
     def _default_system_prompt(self) -> str:
-        return """Bạn là MeetMate AI Assistant - trợ lý thông minh cho PMO (Project Management Office) của ngân hàng LPBank.
+        return """Bạn là MeetMate AI Assistant - trợ lý thông minh cho PMO (Project Management Office).
 
 Nhiệm vụ của bạn:
-1. Hỗ trợ chuẩn bị cuộc họp (Pre-meeting): Gợi ý agenda, tài liệu, người tham gia
-2. Hỗ trợ trong cuộc họp (In-meeting): Ghi chép, phát hiện action items, decisions, risks
-3. Hỗ trợ sau cuộc họp (Post-meeting): Tạo biên bản, theo dõi tasks, Q&A
-4. Hỗ trợ học tập (Study Mode): Trích xuất khái niệm, tạo ví dụ, tạo quiz trắc nghiệm
+1. Hỗ trợ chuẩn bị cuộc họp (Pre-meeting): Gợi ý agenda, tài liệu
+2. Hỗ trợ trong cuộc họp (In-meeting): Ghi chép, phát hiện action items
+3. Hỗ trợ sau cuộc họp (Post-meeting): Tạo biên bản, theo dõi tasks
+4. Hỗ trợ học tập (Study Mode): Trích xuất khái niệm, tạo quiz
 
 Nguyên tắc:
-- Trả lời tiếng Việt, ngắn gọn, không markdown.
-- Nếu không chắc chắn, nói rõ "Tôi không có thông tin về điều này".
+- Trả lời tiếng Việt, ngắn gọn.
+- Nếu không chắc chắn, nói rõ "Tôi không có thông tin".
 """
 
     async def chat(self, message: str, context: Optional[str] = None) -> str:
-        if not self.client:
+        if self.provider == "mock":
             return self._mock_response(message)
+            
         try:
-            messages = []
-            if self.system_prompt:
-                messages.append({"role": "system", "content": self.system_prompt})
+            full_prompt = message
             if context:
-                messages.append({"role": "system", "content": f"Context:\n{context}"})
-            for h in self.history[-5:]:
-                messages.append({"role": "user", "content": h["user"]})
-                messages.append({"role": "assistant", "content": h["assistant"]})
-            messages.append({"role": "user", "content": message})
+                full_prompt = f"Context:\n{context}\n\nUser Question: {message}"
 
-            resp = self.client.chat.completions.create(
-                model=settings.groq_model,
-                messages=messages,
-                temperature=settings.ai_temperature,
-                max_tokens=settings.ai_max_tokens,
-            )
-            assistant_message = resp.choices[0].message.content
-            assistant_message = self._clean_markdown(assistant_message)
-            self.history.append({"user": message, "assistant": assistant_message})
-            return assistant_message
+            if self.provider == "gemini":
+                # Google Gemini
+                chat = self.model.start_chat(history=[])
+                # Note: Gemini python lib handles history differently, usually you keep the chat object.
+                # For stateless/one-off requests like this wrapper implies, generate_content is easier
+                # but doesn't retain history automatically unless we manage it. 
+                # This wrapper seems designed for one-off or managed history.
+                
+                # Construct history for context if needed, but current usage is mostly single turn with large context
+                response = self.model.generate_content(
+                    full_prompt,
+                    generation_config=genai.types.GenerationConfig(
+                        temperature=settings.ai_temperature,
+                        max_output_tokens=settings.ai_max_tokens,
+                    )
+                )
+                return self._clean_markdown(response.text)
+
+            elif self.provider == "groq":
+                # Groq
+                messages = []
+                if self.system_prompt:
+                    messages.append({"role": "system", "content": self.system_prompt})
+                # Check history (simplified)
+                for h in self.history[-5:]:
+                    messages.append({"role": "user", "content": h["user"]})
+                    messages.append({"role": "assistant", "content": h["assistant"]})
+                
+                messages.append({"role": "user", "content": full_prompt})
+
+                resp = self.client.chat.completions.create(
+                    model=settings.groq_model,
+                    messages=messages,
+                    temperature=settings.ai_temperature,
+                    max_tokens=settings.ai_max_tokens,
+                )
+                assistant_message = resp.choices[0].message.content
+                self.history.append({"user": full_prompt, "assistant": assistant_message})
+                return self._clean_markdown(assistant_message)
+                
         except Exception as e:
             import traceback
-            print(f"[Groq] Chat error: {e}")
+            print(f"[{self.provider}] Chat error: {e}")
             print(traceback.format_exc())
             return self._mock_response(message)
     
