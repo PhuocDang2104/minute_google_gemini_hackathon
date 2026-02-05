@@ -25,7 +25,7 @@ Tài liệu này giúp reviewer dựng lại toàn bộ sản phẩm (Postgres +
    EOF
    ```
    - Nếu chạy backend thuần Python (không Docker), đổi host DB thành `localhost:5433`.
-   - Các khóa SmartVoice/GoMeet khác có thể để trống khi demo.
+   - Các khóa SmartVoice khác có thể để trống khi demo.
 
 ## 3) Đóng gói & khởi chạy Postgres + Backend (khuyến nghị)
 ```bash

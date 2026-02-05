@@ -1,15 +1,15 @@
 """
 Video Inference Service
-Process video: extract audio -> transcribe -> diarize -> create transcript -> generate minutes -> PDF
+Process video: extract audio -> transcribe -> create transcript -> generate minutes -> PDF
 """
 import logging
 import tempfile
 import httpx
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from sqlalchemy.orm import Session
 
-from app.services import audio_processing, vnpt_stt_service, diarization_service, transcript_service
+from app.services import audio_processing, transcript_service, asr_service
 from app.services import minutes_service
 from app.schemas.transcript import TranscriptChunkCreate
 
@@ -26,9 +26,8 @@ async def process_meeting_video(
     Process video file through full pipeline:
     1. Download video (if URL)
     2. Extract audio
-    3. Transcribe with VNPT STT
-    4. Diarize speakers
-    5. Create transcript chunks
+    3. Transcribe with ASR service (whisper.cpp)
+    4. Create transcript chunks
     6. Generate meeting minutes
     7. Export PDF (optional)
     
@@ -50,11 +49,18 @@ async def process_meeting_video(
             logger.info(f"Downloading video from {video_url}")
             video_path = await _download_video(video_url, meeting_id)
         elif video_url.startswith("/files/"):
-            # Local file path
+            # Local file path served by StaticFiles -> /files maps to /app/uploaded_files
             base_dir = Path(__file__).parent.parent.parent
-            video_path = base_dir / video_url.lstrip("/")
+            upload_dir = base_dir / "uploaded_files"
+            relative_path = video_url[len("/files/"):]
+            video_path = upload_dir / relative_path
             if not video_path.exists():
-                raise FileNotFoundError(f"Video file not found: {video_path}")
+                # Backward-compat fallback if stored under /app/files
+                legacy_path = base_dir / video_url.lstrip("/")
+                if legacy_path.exists():
+                    video_path = legacy_path
+                else:
+                    raise FileNotFoundError(f"Video file not found: {video_path}")
         else:
             video_path = Path(video_url)
             if not video_path.exists():
@@ -74,41 +80,31 @@ async def process_meeting_video(
             )
             logger.info(f"Audio extracted: {audio_path}")
             
-            # Step 3: Transcribe with VNPT STT
-            logger.info("Transcribing audio with VNPT STT...")
-            transcription_result = await vnpt_stt_service.transcribe_audio_file(
-                audio_path,
-                language_code="vi-VN",
-                enable_word_time_offsets=True,
+            # Step 3: Transcribe with ASR service (whisper.cpp)
+            logger.info("Transcribing audio with ASR service...")
+            asr_result = await asr_service.transcribe_audio_file(audio_path)
+            segments = _extract_whisper_segments(asr_result)
+            language = (
+                asr_result.get("language")
+                or (asr_result.get("result") or {}).get("language")
+                or (asr_result.get("params") or {}).get("language")
+                or "en"
             )
-            logger.info(f"Transcription completed: {len(transcription_result.segments)} segments")
-            
-            # Step 4: Diarize speakers
-            logger.info("Diarizing speakers...")
-            diarization_segments = await diarization_service.diarize_audio(audio_path)
-            logger.info(f"Diarization completed: {len(diarization_segments)} segments")
-            
-            # Step 5: Merge transcription and diarization
-            logger.info("Merging transcription and diarization...")
-            merged_chunks = _merge_transcription_and_diarization(
-                transcription_result.segments,
-                diarization_segments,
-            )
-            logger.info(f"Merged into {len(merged_chunks)} chunks")
+            logger.info(f"Transcription completed: {len(segments)} segments")
             
             # Step 6: Create transcript chunks in database
             logger.info("Saving transcript chunks to database...")
             chunks_to_create = []
-            for idx, chunk in enumerate(merged_chunks, start=1):
+            for idx, seg in enumerate(segments, start=1):
                 chunks_to_create.append(TranscriptChunkCreate(
                     meeting_id=meeting_id,
                     chunk_index=idx,
-                    start_time=chunk["start_time"],
-                    end_time=chunk["end_time"],
-                    speaker=chunk.get("speaker", "UNKNOWN"),
-                    text=chunk["text"],
-                    confidence=chunk.get("confidence", 1.0),
-                    language=transcription_result.language,
+                    start_time=seg["start_time"],
+                    end_time=seg["end_time"],
+                    speaker=seg.get("speaker", "SPEAKER_01"),
+                    text=seg["text"],
+                    confidence=seg.get("confidence", 1.0),
+                    language=language,
                 ))
             
             result = transcript_service.create_batch_transcript_chunks(
@@ -181,60 +177,65 @@ async def _download_video(url: str, meeting_id: str) -> Path:
     return video_path
 
 
-def _merge_transcription_and_diarization(
-    transcription_segments: list,
-    diarization_segments: list,
-) -> list:
-    """
-    Merge transcription segments with diarization segments to assign speakers.
-    
-    Args:
-        transcription_segments: List of transcription segments with time_start, time_end, text
-        diarization_segments: List of diarization segments with speaker, start, end
-        
-    Returns:
-        List of merged chunks with speaker, text, time_start, time_end
-    """
-    merged = []
-    
-    # Create a mapping from time to speaker
-    speaker_map = []
-    for diar_seg in diarization_segments:
-        speaker_map.append({
-            "speaker": diar_seg["speaker"],
-            "start": diar_seg["start"],
-            "end": diar_seg["end"],
+def _extract_whisper_segments(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    # whisper.cpp JSON variants:
+    # - segments: [{start, end, text}] or [{t0, t1, text}]
+    # - transcription: [{offsets: {from, to}, text}] (whisper-cli -oj)
+    segments = payload.get("segments") or []
+    if not segments:
+        transcription = payload.get("transcription") or []
+        if transcription:
+            normalized: List[Dict[str, Any]] = []
+            for item in transcription:
+                offsets = item.get("offsets") or {}
+                start_ms = offsets.get("from")
+                end_ms = offsets.get("to")
+                text = (item.get("text") or "").strip()
+                if not text:
+                    continue
+                start_time = float(start_ms) / 1000.0 if start_ms is not None else 0.0
+                end_time = float(end_ms) / 1000.0 if end_ms is not None else start_time
+                normalized.append({
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "text": text,
+                    "speaker": "SPEAKER_01",
+                    "confidence": 1.0,
+                })
+            return normalized
+
+        text = (payload.get("text") or "").strip()
+        if not text:
+            return []
+        return [{
+            "start_time": 0.0,
+            "end_time": 0.0,
+            "text": text,
+            "speaker": "SPEAKER_01",
+            "confidence": 1.0,
+        }]
+
+    normalized: List[Dict[str, Any]] = []
+    for seg in segments:
+        start = seg.get("start")
+        end = seg.get("end")
+        if start is None and seg.get("t0") is not None:
+            start = float(seg.get("t0", 0)) / 100.0
+        if end is None and seg.get("t1") is not None:
+            end = float(seg.get("t1", 0)) / 100.0
+        if start is None:
+            start = 0.0
+        if end is None:
+            end = float(start)
+        text = (seg.get("text") or "").strip()
+        if not text:
+            continue
+        normalized.append({
+            "start_time": float(start),
+            "end_time": float(end),
+            "text": text,
+            "speaker": "SPEAKER_01",
+            "confidence": 1.0,
         })
-    speaker_map.sort(key=lambda x: x["start"])
-    
-    # Assign speakers to transcription segments
-    for trans_seg in transcription_segments:
-        seg_start = trans_seg.get("time_start") or 0.0
-        seg_end = trans_seg.get("time_end") or seg_start + 1.0
-        seg_text = trans_seg.get("text", "")
-        seg_confidence = trans_seg.get("confidence", 1.0)
-        
-        # Find overlapping diarization segment
-        speaker = "UNKNOWN"
-        for diar_seg in speaker_map:
-            # Check if transcription segment overlaps with diarization segment
-            if seg_start >= diar_seg["start"] and seg_start < diar_seg["end"]:
-                speaker = diar_seg["speaker"]
-                break
-            elif seg_end > diar_seg["start"] and seg_end <= diar_seg["end"]:
-                speaker = diar_seg["speaker"]
-                break
-            elif seg_start <= diar_seg["start"] and seg_end >= diar_seg["end"]:
-                speaker = diar_seg["speaker"]
-                break
-        
-        merged.append({
-            "text": seg_text,
-            "speaker": speaker,
-            "start_time": seg_start,
-            "end_time": seg_end,
-            "confidence": seg_confidence,
-        })
-    
-    return merged
+    return normalized
 

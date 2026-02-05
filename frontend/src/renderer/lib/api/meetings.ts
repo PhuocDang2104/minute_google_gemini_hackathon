@@ -94,24 +94,7 @@ export const meetingsApi = {
   uploadVideo: async (meetingId: string, file: File): Promise<{ recording_url: string; message: string }> => {
     const formData = new FormData();
     formData.append('video', file);
-
-    const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-    const token = localStorage.getItem('minute_access_token');
-
-    const response = await fetch(`${API_BASE_URL}/api/v1${ENDPOINT}/${meetingId}/upload-video`, {
-      method: 'POST',
-      headers: token ? {
-        'Authorization': `Bearer ${token}`,
-      } : {},
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Upload failed' }));
-      throw new Error(error.detail || 'Upload failed');
-    }
-
-    return response.json();
+    return api.post<{ recording_url: string; message: string }>(`${ENDPOINT}/${meetingId}/upload-video`, formData);
   },
 
   /**

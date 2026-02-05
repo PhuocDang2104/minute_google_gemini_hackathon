@@ -46,7 +46,7 @@ class SourceRegisterResponse(BaseModel):
 
 class AudioStartMessage(BaseModel):
     type: Literal["start"] = "start"
-    platform: str = Field(default="unknown")
+    platform: str = Field(default="google_meet_tab")
     platform_meeting_ref: Optional[str] = None
     audio: AudioFormat = Field(default_factory=AudioFormat)
     language_code: Optional[str] = None

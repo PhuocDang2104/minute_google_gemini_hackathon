@@ -1,4 +1,5 @@
 from sqlalchemy import Column, String, ForeignKey, Text, Float, JSON
+from sqlalchemy import Integer
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from app.models.base import Base, TimestampMixin, UUIDMixin
@@ -25,3 +26,17 @@ class VisualEvent(Base, UUIDMixin, TimestampMixin):
     event_type = Column(String)  # slide_change, screen_share, whiteboard, code
     
     meeting = relationship("Meeting", back_populates="visual_events")
+
+
+class ContextWindow(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = 'context_window'
+
+    meeting_id = Column(UUID(as_uuid=True), ForeignKey('meeting.id', ondelete='CASCADE'), nullable=False)
+    start_time = Column(Float, nullable=False)
+    end_time = Column(Float, nullable=False)
+    transcript_text = Column(Text)
+    visual_context = Column(JSON)  # Visual highlights or aligned events for the window
+    citations = Column(JSON)
+    window_index = Column(Integer)
+
+    meeting = relationship("Meeting", back_populates="context_windows")

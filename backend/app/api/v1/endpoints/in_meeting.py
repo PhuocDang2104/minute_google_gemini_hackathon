@@ -92,8 +92,9 @@ def transcript():
     return [TranscriptEvent(speaker='PMO', text='We need to accelerate API A', timestamp=0.0)]
 
 
-@router.post('/gomeet/join-url', response_model=GoMeetJoinUrlResponse)
+@router.post('/gomeet/join-url', response_model=GoMeetJoinUrlResponse, deprecated=True)
 async def build_gomeet_join_url(payload: GoMeetJoinUrlRequest) -> GoMeetJoinUrlResponse:
+    """Deprecated: GoMeet integration removed. Keep for backward compatibility."""
     token_payload = verify_audio_ingest_token(payload.audio_ingest_token, expected_session_id=payload.session_id)
     if not token_payload:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid audio_ingest_token")

@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict
 
 from pydantic import ValidationError
 
+from app.db.session import SessionLocal
 from app.schemas.realtime import TranscriptIngestPayload
 from app.services.realtime_bus import session_bus
+from app.services.in_meeting_persistence import persist_transcript
 from app.services.realtime_session_store import session_store
+
+logger = logging.getLogger(__name__)
 
 
 def _validate_required(payload: TranscriptIngestPayload) -> None:
@@ -60,7 +65,36 @@ async def ingestTranscript(session_id: str, payload: Dict[str, Any], source: str
     )
     seq = int(envelope.get("seq") or 0)
 
+    if seg.is_final:
+        _persist_final_chunk(seg, seq)
+
     return seq
+
+
+def _persist_final_chunk(seg: TranscriptIngestPayload, seq: int) -> None:
+    meeting_id = seg.meeting_id
+    if not meeting_id:
+        return
+    db = SessionLocal()
+    try:
+        persist_transcript(
+            db,
+            meeting_id,
+            {
+                "seq": seq,
+                "speaker": seg.speaker,
+                "text": seg.chunk,
+                "time_start": seg.time_start,
+                "time_end": seg.time_end,
+                "is_final": True,
+                "lang": seg.lang,
+                "confidence": seg.confidence,
+            },
+        )
+    except Exception:
+        logger.warning("persist_final_transcript_failed meeting_id=%s seq=%s", meeting_id, seq, exc_info=True)
+    finally:
+        db.close()
 
 
 async def publish_state(session_id: str, state: Dict[str, Any]) -> Dict[str, Any]:

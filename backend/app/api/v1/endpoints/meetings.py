@@ -391,7 +391,7 @@ async def trigger_inference(
         raise HTTPException(status_code=400, detail="Meeting does not have a video recording")
     
     try:
-        # Process video (this is synchronous for now - can be moved to background job later)
+        # Process video (sync for demo). TODO: move to background job/queue for long videos.
         result = await video_inference_service.process_meeting_video(
             db=db,
             meeting_id=meeting_id,

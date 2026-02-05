@@ -6,6 +6,7 @@ from typing import Optional, List
 from uuid import uuid4
 from sqlalchemy.orm import Session
 from sqlalchemy import text
+from typing import Set, Optional
 
 from app.schemas.transcript import (
     TranscriptChunkCreate, TranscriptChunkUpdate, 
@@ -22,6 +23,7 @@ def list_transcript_chunks(
     limit: int = 100
 ) -> TranscriptChunkList:
     """List transcript chunks for a meeting"""
+    columns = _get_transcript_columns(db)
     
     conditions = ["meeting_id = :meeting_id"]
     params = {'meeting_id': meeting_id, 'limit': limit}
@@ -35,17 +37,25 @@ def list_transcript_chunks(
     
     where_clause = " AND ".join(conditions)
     
+    start_expr = _start_time_expr(columns)
+    end_expr = _end_time_expr(columns)
+    language_expr = _language_expr(columns)
+    speaker_user_expr = "tc.speaker_user_id::text" if "speaker_user_id" in columns else "NULL::text"
+    speaker_name_expr = "u.display_name" if "speaker_user_id" in columns else "NULL"
+    join_user = "LEFT JOIN user_account u ON tc.speaker_user_id = u.id" if "speaker_user_id" in columns else ""
+
     query = text(f"""
         SELECT 
             tc.id::text, tc.meeting_id::text, tc.chunk_index,
-            COALESCE(tc.start_time, tc.time_start, 0.0) as start_time,
-            COALESCE(tc.end_time, tc.time_end, 0.0) as end_time,
+            {start_expr} as start_time,
+            {end_expr} as end_time,
             tc.speaker,
-            tc.speaker_user_id::text, tc.text, tc.confidence,
-            COALESCE(tc.language, tc.lang, 'vi') as language, tc.created_at,
-            u.display_name as speaker_name
+            {speaker_user_expr} as speaker_user_id,
+            tc.text, tc.confidence,
+            {language_expr} as language, tc.created_at,
+            {speaker_name_expr} as speaker_name
         FROM transcript_chunk tc
-        LEFT JOIN user_account u ON tc.speaker_user_id = u.id
+        {join_user}
         WHERE {where_clause}
         ORDER BY tc.chunk_index ASC
         LIMIT :limit
@@ -99,35 +109,63 @@ def create_transcript_chunk(db: Session, data: TranscriptChunkCreate) -> Transcr
     """Create a new transcript chunk"""
     chunk_id = str(uuid4())
     now = datetime.utcnow()
-    
-    # Insert into primary columns (start_time, end_time, language)
-    # Database may also have time_start, time_end, lang, is_final columns
-    # We'll use the primary columns and let the database handle defaults if needed
-    query = text("""
+
+    columns = _get_transcript_columns(db)
+
+    fields = ["id", "meeting_id", "chunk_index", "speaker", "text", "confidence", "created_at"]
+    params = {
+        "id": chunk_id,
+        "meeting_id": data.meeting_id,
+        "chunk_index": data.chunk_index,
+        "speaker": data.speaker,
+        "text": data.text,
+        "confidence": data.confidence,
+        "created_at": now,
+    }
+
+    # Time columns (start/end) - support both legacy and new schemas
+    if "start_time" in columns:
+        fields.append("start_time")
+        params["start_time"] = data.start_time
+    elif "time_start" in columns:
+        fields.append("time_start")
+        params["time_start"] = data.start_time
+
+    if "end_time" in columns:
+        fields.append("end_time")
+        params["end_time"] = data.end_time
+    elif "time_end" in columns:
+        fields.append("time_end")
+        params["time_end"] = data.end_time
+
+    # Language columns
+    if "language" in columns:
+        fields.append("language")
+        params["language"] = data.language
+    elif "lang" in columns:
+        fields.append("lang")
+        params["lang"] = data.language
+
+    # Optional columns
+    if "speaker_user_id" in columns:
+        fields.append("speaker_user_id")
+        params["speaker_user_id"] = data.speaker_user_id
+    if "is_final" in columns:
+        fields.append("is_final")
+        params["is_final"] = True
+
+    placeholders = ", ".join([f":{name}" for name in fields])
+    query = text(f"""
         INSERT INTO transcript_chunk (
-            id, meeting_id, chunk_index, start_time, end_time,
-            speaker, speaker_user_id, text, confidence, language, created_at
+            {', '.join(fields)}
         )
         VALUES (
-            :id, :meeting_id, :chunk_index, :start_time, :end_time,
-            :speaker, :speaker_user_id, :text, :confidence, :language, :created_at
+            {placeholders}
         )
         RETURNING id::text
     """)
     
-    db.execute(query, {
-        'id': chunk_id,
-        'meeting_id': data.meeting_id,
-        'chunk_index': data.chunk_index,
-        'start_time': data.start_time,
-        'end_time': data.end_time,
-        'speaker': data.speaker,
-        'speaker_user_id': data.speaker_user_id,
-        'text': data.text,
-        'confidence': data.confidence,
-        'language': data.language,
-        'created_at': now
-    })
+    db.execute(query, params)
     db.commit()
     
     return TranscriptChunkResponse(
@@ -167,6 +205,7 @@ def update_transcript_chunk(
     data: TranscriptChunkUpdate
 ) -> Optional[TranscriptChunkResponse]:
     """Update a transcript chunk"""
+    columns = _get_transcript_columns(db)
     updates = []
     params = {'chunk_id': chunk_id}
     
@@ -176,23 +215,28 @@ def update_transcript_chunk(
     if data.speaker is not None:
         updates.append("speaker = :speaker")
         params['speaker'] = data.speaker
-    if data.speaker_user_id is not None:
+    if data.speaker_user_id is not None and "speaker_user_id" in columns:
         updates.append("speaker_user_id = :speaker_user_id")
         params['speaker_user_id'] = data.speaker_user_id
     
     if not updates:
         return None
     
+    start_expr = _start_time_expr(columns, prefix="")
+    end_expr = _end_time_expr(columns, prefix="")
+    language_expr = _language_expr(columns, prefix="")
+    speaker_user_expr = "speaker_user_id::text" if "speaker_user_id" in columns else "NULL::text"
+
     query = text(f"""
         UPDATE transcript_chunk
         SET {', '.join(updates)}
         WHERE id = :chunk_id
         RETURNING id::text, meeting_id::text, chunk_index,
-            COALESCE(start_time, time_start, 0.0) as start_time,
-            COALESCE(end_time, time_end, 0.0) as end_time,
-            speaker, speaker_user_id::text,
+            {start_expr} as start_time,
+            {end_expr} as end_time,
+            speaker, {speaker_user_expr} as speaker_user_id,
             text, confidence,
-            COALESCE(language, lang, 'vi') as language, created_at
+            {language_expr} as language, created_at
     """)
     
     result = db.execute(query, params)
@@ -229,6 +273,63 @@ def delete_transcript_chunks(db: Session, meeting_id: str) -> int:
     db.commit()
     
     return len(result.fetchall())
+
+
+_TRANSCRIPT_COLUMNS: Optional[Set[str]] = None
+
+
+def _get_transcript_columns(db: Session) -> Set[str]:
+    """Cache transcript_chunk columns to handle schema variants."""
+    global _TRANSCRIPT_COLUMNS
+    if _TRANSCRIPT_COLUMNS is None:
+        try:
+            result = db.execute(text("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'transcript_chunk'
+            """))
+            _TRANSCRIPT_COLUMNS = {row[0] for row in result.fetchall()}
+        except Exception:
+            # Fallback to legacy schema
+            _TRANSCRIPT_COLUMNS = {
+                "id", "meeting_id", "chunk_index", "speaker", "text",
+                "time_start", "time_end", "lang", "confidence", "created_at", "updated_at", "is_final",
+            }
+    return _TRANSCRIPT_COLUMNS
+
+
+def _start_time_expr(columns: Set[str], prefix: str = "tc.") -> str:
+    p = prefix
+    if "start_time" in columns and "time_start" in columns:
+        return f"COALESCE({p}start_time, {p}time_start, 0.0)"
+    if "start_time" in columns:
+        return f"COALESCE({p}start_time, 0.0)"
+    if "time_start" in columns:
+        return f"COALESCE({p}time_start, 0.0)"
+    return "0.0"
+
+
+def _end_time_expr(columns: Set[str], prefix: str = "tc.") -> str:
+    p = prefix
+    if "end_time" in columns and "time_end" in columns:
+        return f"COALESCE({p}end_time, {p}time_end, 0.0)"
+    if "end_time" in columns:
+        return f"COALESCE({p}end_time, 0.0)"
+    if "time_end" in columns:
+        return f"COALESCE({p}time_end, 0.0)"
+    return "0.0"
+
+
+def _language_expr(columns: Set[str], prefix: str = "tc.") -> str:
+    p = prefix
+    if "language" in columns and "lang" in columns:
+        return f"COALESCE({p}language, {p}lang, 'vi')"
+    if "language" in columns:
+        return f"COALESCE({p}language, 'vi')"
+    if "lang" in columns:
+        return f"COALESCE({p}lang, 'vi')"
+    return "'vi'"
 
 
 # ============================================

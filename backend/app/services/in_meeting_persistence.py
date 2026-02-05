@@ -10,6 +10,7 @@ from app.models import (
     TopicSegment,
     AdrHistory,
     ToolSuggestion,
+    ContextWindow,
 )
 
 
@@ -83,6 +84,27 @@ def persist_topic_segment(db: Session, meeting_id: str, segment: Dict[str, Any])
     except Exception as e:
         db.rollback()
         print(f"[persist_topic_segment] error: {e}")
+        return None
+
+
+def persist_context_window(db: Session, meeting_id: str, window: Dict[str, Any]) -> Optional[ContextWindow]:
+    try:
+        row = ContextWindow(
+            meeting_id=meeting_id,
+            start_time=window.get("start_time", 0.0),
+            end_time=window.get("end_time", 0.0),
+            transcript_text=window.get("transcript_text"),
+            visual_context=window.get("visual_context"),
+            citations=window.get("citations"),
+            window_index=window.get("window_index"),
+        )
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return row
+    except Exception as e:
+        db.rollback()
+        print(f"[persist_context_window] error: {e}")
         return None
 
 

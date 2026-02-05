@@ -18,6 +18,8 @@
 │   ├── /round_2                   # Auth, security, project specs
 │   └── ...                        # Transcript, video, minutes handling
 │
+├── ASR_DOCKER.md           # ASR (whisper.cpp) docker integration
+│
 ├── /reference             # Reference materials
 │   ├── /Gemini hackathon          # Vision & idea proposal
 │   └── /templates                 # Meeting minutes templates
@@ -36,6 +38,7 @@
 | [SAAR Architecture](architecture/saar-rag-architecture.md) | Core AI architecture |
 | [In-Meeting Flow](architecture/in_meeting_flow.md) | Real-time transcript flow |
 | [RAG Architecture](architecture/rag_architecture.md) | RAG implementation |
+| [ASR Docker](ASR_DOCKER.md) | ASR service (whisper.cpp) setup |
 | [Deployment](implementation/DEPLOYMENT.md) | Deploy guide |
 
 ## 🚀 Quick Start

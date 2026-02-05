@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     
     # AI Model settings
     groq_model: str = 'llama-3.1-8b-instant'
+    gemini_model: str = 'gemini-1.5-flash'
     ai_temperature: float = 0.7
     ai_max_tokens: int = 2048
     
@@ -85,6 +86,9 @@ class Settings(BaseSettings):
     
     # Diarization API (Hugging Face Space)
     diarization_api_url: str = ''  # e.g. https://anhoaithai345-meetmate.hf.space/api/diarize
+
+    # Local ASR microservice (whisper.cpp)
+    asr_url: str = 'http://asr:9000'
 
     model_config = SettingsConfigDict(
         env_file=find_env_file(),

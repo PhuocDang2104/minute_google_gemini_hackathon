@@ -112,20 +112,20 @@ export const api = {
   post: <T>(endpoint: string, data?: unknown, options?: { skipAuth?: boolean }) =>
     request<T>(endpoint, {
       method: 'POST',
-      body: data ? JSON.stringify(data) : undefined,
+      body: data instanceof FormData ? data : data ? JSON.stringify(data) : undefined,
       skipAuth: options?.skipAuth,
     }),
 
   put: <T>(endpoint: string, data?: unknown) =>
     request<T>(endpoint, {
       method: 'PUT',
-      body: data ? JSON.stringify(data) : undefined,
+      body: data instanceof FormData ? data : data ? JSON.stringify(data) : undefined,
     }),
 
   patch: <T>(endpoint: string, data?: unknown) =>
     request<T>(endpoint, {
       method: 'PATCH',
-      body: data ? JSON.stringify(data) : undefined,
+      body: data instanceof FormData ? data : data ? JSON.stringify(data) : undefined,
     }),
 
   delete: <T>(endpoint: string) =>

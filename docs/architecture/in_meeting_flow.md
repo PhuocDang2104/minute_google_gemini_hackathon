@@ -1,7 +1,7 @@
 # In-meeting realtime flow (MeetMate) — Spec-aligned
 
 Tài liệu này mô tả **luồng realtime chuẩn** của MeetMate theo spec:
-**Raw Audio Ingest (Google Meet / VNPT GoMeet) → SmartVoice STT (streaming) → Session Bus → Frontend**.
+**Raw Audio Ingest (Google Meet tab audio share) → SmartVoice STT (streaming) → Session Bus → Frontend**.
 
 Mục tiêu: Frontend chỉ cần mở **1 WebSocket** để nhận:
 - `transcript_event` (caption, partial/final)
@@ -14,10 +14,10 @@ Mục tiêu: Frontend chỉ cần mở **1 WebSocket** để nhận:
 ### 1.1. Production (audio → STT → bus → frontend)
 1) **Tạo session**
    - `POST /api/v1/sessions` → trả `session_id`, `audio_ws_url`, `frontend_ws_url`, `transcript_test_ws_url`.
-2) **Bridge đăng ký nguồn & lấy token**
-   - `POST /api/v1/sessions/{session_id}/sources?platform=vnpt_gomeet` → nhận `source_id` + `audio_ingest_token` (JWT) để đẩy audio vào MeetMate.
+2) **Client đăng ký nguồn & lấy token**
+   - `POST /api/v1/sessions/{session_id}/sources?platform=google_meet_tab` → nhận `source_id` + `audio_ingest_token` (JWT) để đẩy audio vào MeetMate.
 3) **Raw audio ingress vào MeetMate**
-   - Bridge mở `WS /api/v1/ws/audio/{session_id}?token=...`
+   - Client (browser) mở `WS /api/v1/ws/audio/{session_id}?token=...`
    - Gửi `start` (JSON) → sau đó stream **binary PCM frames** (PCM S16LE, mono, 16kHz).
 4) **Backend gọi SmartVoice STT streaming**
    - Backend forward audio frames sang SmartVoice.
@@ -26,7 +26,7 @@ Mục tiêu: Frontend chỉ cần mở **1 WebSocket** để nhận:
    - Map STT → payload transcript chuẩn MeetMate.
    - Gọi `ingestTranscript(session_id, payload, source="smartvoice_stt")`:
      - validate bắt buộc
-     - persist DB best-effort
+    - persist DB best-effort cho **final chunks**
      - cấp `seq` tăng dần theo session
      - publish `transcript_event` vào bus
 6) **Session Bus fan-out**
@@ -36,31 +36,16 @@ Mục tiêu: Frontend chỉ cần mở **1 WebSocket** để nhận:
    - Frontend mở `WS /api/v1/ws/frontend/{session_id}` và nhận `transcript_event` + `state`.
 
 #### 1.1.1 Ai “kích hoạt session” và ai chủ động stream audio?
-Trong spec này, **MeetMate không gọi ngược sang GoMeet** để “bảo GoMeet bắt đầu stream”.
+Trong spec hiện tại, **audio được lấy trực tiếp từ tab Google Meet** mà người dùng share. MeetMate không gọi ngược sang nền tảng họp để “bật bridge”.
 
-Thành phần chủ động stream audio luôn là **GoMeet Bridge** (bot/service) - nó join phòng GoMeet, lấy audio track và **đẩy audio sang MeetMate** qua `WS /api/v1/ws/audio/...`.
+Thành phần chủ động stream audio là **client (browser)**:
+1) UI gọi `POST /api/v1/sessions` để tạo session (khuyến nghị `session_id = meeting.id`).
+2) UI gọi `POST /api/v1/sessions/{session_id}/sources` để lấy `audio_ingest_token`.
+3) UI mở `WS /api/v1/ws/audio/{session_id}?token=...`, gửi `start`, chờ `audio_start_ack` rồi stream PCM frames từ tab audio share.
 
-Có 2 cách để GoMeet Bridge nhận được `session_id` + `audio_ws_url` + `audio_ingest_token`:
-1) **Bridge pull (khuyến nghị nếu GoMeet Bridge đứng độc lập)**:
-   - Bridge tự gọi:
-     - `POST /api/v1/sessions` (có thể set `session_id = meeting.id` nếu muốn gắn vào DB meeting)
-     - `POST /api/v1/sessions/{session_id}/sources` để lấy `audio_ingest_token`
-   - Sau đó Bridge mở `WS /api/v1/ws/audio/{session_id}?token=...`, gửi `start`, chờ `audio_start_ack` rồi stream PCM frames.
-2) **MeetMate push (nếu GoMeet có “control API” để bật bot)**:
-   - MeetMate (UI hoặc backend orchestrator) gọi 2 REST endpoints của MeetMate để tạo session + token.
-   - Sau đó MeetMate **gọi control API của GoMeet Bridge** (do phía GoMeet cung cấp) để truyền vào:
-     - `session_id`
-     - `audio_ws_url`
-     - `audio_ingest_token`
-     - `language_code`, `frame_ms`, `audio format` (PCM_S16LE mono 16kHz)
-     - `platform_meeting_ref` + GoMeet join token (thuộc hệ GoMeet)
-   - GoMeet Bridge nhận config và bắt đầu stream sang MeetMate.
-
-Tham khảo spec chi tiết để gửi GoMeet team: `docs/gomeet_control_api_spec.md`.
-
-Điểm “handshake” để Bridge biết session sẵn sàng:
-- Sau khi Bridge connect WS và gửi `start`, MeetMate trả `audio_start_ack` (accept start + format).
-- Sau khi Bridge gửi frame audio đầu tiên, backend sẽ trả thêm event `audio_ingest_ok` (xác nhận API đã nhận được audio frame).
+Điểm “handshake” để client biết session sẵn sàng:
+- Sau khi client connect WS và gửi `start`, MeetMate trả `audio_start_ack` (accept start + format).
+- Sau khi client gửi frame audio đầu tiên, backend trả thêm event `audio_ingest_ok` (xác nhận API đã nhận được audio frame).
 
 ### 1.2. Dev/Test (bơm transcript tuỳ chọn)
 Không cần audio/STT:
@@ -104,15 +89,15 @@ Response:
 }
 ```
 
-### 2.2 REST — Bridge đăng ký nguồn & lấy token
-`POST /api/v1/sessions/{session_id}/sources?platform=vnpt_gomeet`
+### 2.2 REST — Client đăng ký nguồn & lấy token
+`POST /api/v1/sessions/{session_id}/sources?platform=google_meet_tab`
 
 Response:
 ```json
 {
   "session_id": "sess_or_uuid",
   "source_id": "src_..._uuid",
-  "platform": "vnpt_gomeet",
+  "platform": "google_meet_tab",
   "audio_ingest_token": "<jwt_scope_audio_session>",
   "token_ttl_seconds": 1800
 }
@@ -129,8 +114,8 @@ Endpoint: `wss://<host>/api/v1/ws/audio/{session_id}?token={audio_ingest_token}`
 ```json
 {
   "type": "start",
-  "platform": "vnpt_gomeet",
-  "platform_meeting_ref": "gomeet:room_987",
+  "platform": "google_meet_tab",
+  "platform_meeting_ref": "google_meet:meet.google.com/xxx-xxxx-xxx",
   "audio": { "codec": "PCM_S16LE", "sample_rate_hz": 16000, "channels": 1 },
   "language_code": "vi-VN",
   "frame_ms": 250,
@@ -249,7 +234,7 @@ Minimal RecognitionConfig (tham khảo):
 ---
 
 ## 5) Operational notes
-- **Partial vs Final**: UI hiển thị `is_final=false` dạng typing; `is_final=true` commit timeline. LangGraph worker ưu tiên tick trên final (và question-trigger).
+- **Partial vs Final**: UI hiển thị `is_final=false` dạng typing; `is_final=true` commit timeline. Final (khoảng mỗi 10s) được persist vào DB.
 - **Transcript window**: backend giữ buffer ~4000 ký tự/session cho graph context.
 - **Realtime tick**: 30s/tick, dùng rolling window 60s (có thể include partial mới nhất nếu chưa final).
 - **Persistence**: best-effort; để persist vào DB đầy đủ, khuyến nghị dùng `session_id = meeting.id` (UUID có Meeting record).

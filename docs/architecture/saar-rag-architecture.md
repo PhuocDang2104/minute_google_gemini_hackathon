@@ -47,7 +47,7 @@ SAAR không chỉ “Retrieve → Generate”, mà bổ sung **các vòng kiểm
 ### **2.1 Các khối hệ thống chính**
 
 1. **Client Layer (Desktop/Meetings add-in or SDK)**  
-* Stream audio (GoogleMeet/VNPTGoMeet)  
+* Stream audio (Google Meet tab audio share)  
 * Gửi event: `transcript`, `question (Ask-AI)`, `confirm_tool`  
 * Nhận: `recap`, `adr_update`, `qa_answer`, `tool_suggestion`, `error`
 

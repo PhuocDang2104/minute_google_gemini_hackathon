@@ -128,24 +128,10 @@ export const knowledgeApi = {
     if (data.project_id) formData.append('project_id', data.project_id);
     if (file) formData.append('file', file);
 
-    // Use fetch directly for FormData
-    const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-    const token = localStorage.getItem('minute_access_token');
-
-    const response = await fetch(`${API_BASE_URL}/api/v1${ENDPOINT}/documents/upload`, {
-      method: 'POST',
-      headers: token ? {
-        'Authorization': `Bearer ${token}`,
-      } : {},
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Upload failed' }));
-      throw new Error(error.detail || 'Upload failed');
-    }
-
-    return response.json();
+    return api.post<{ id: string; title: string; file_url: string; message: string }>(
+      `${ENDPOINT}/documents/upload`,
+      formData
+    );
   },
 
   /**

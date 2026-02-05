@@ -14,7 +14,7 @@ from .adr import (
     AiEventLog,
     ToolSuggestion,
 )
-from .timeline import RecapSegment, VisualEvent
+from .timeline import RecapSegment, VisualEvent, ContextWindow
 from .summary import MeetingSummary
 from .study import NoteItem, QuizItem
 
@@ -39,6 +39,7 @@ __all__ = [
     'MarketingLead',
     'RecapSegment',
     'VisualEvent',
+    'ContextWindow',
     'MeetingSummary',
     'NoteItem',
     'QuizItem',

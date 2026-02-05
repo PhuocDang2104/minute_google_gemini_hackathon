@@ -40,6 +40,7 @@ class Meeting(Base, UUIDMixin, TimestampMixin):
     # New Relationships
     recap_segments = relationship("app.models.timeline.RecapSegment", back_populates="meeting", cascade="all, delete-orphan")
     visual_events = relationship("app.models.timeline.VisualEvent", back_populates="meeting", cascade="all, delete-orphan")
+    context_windows = relationship("app.models.timeline.ContextWindow", back_populates="meeting", cascade="all, delete-orphan")
     summaries = relationship("app.models.summary.MeetingSummary", back_populates="meeting", cascade="all, delete-orphan")
     chat_sessions = relationship("app.models.chat_session.ChatSession", back_populates="meeting", cascade="all, delete-orphan")
 

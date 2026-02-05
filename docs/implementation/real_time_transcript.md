@@ -4,17 +4,17 @@ Tài liệu này hướng dẫn **test nhanh** pipeline realtime của MeetMate 
 - Production: **Raw audio ingress** → **SmartVoice STT** → **bus** → **frontend**
 - Dev/Test: **bơm transcript** vào `WS /ws/in-meeting` để test UI/bus/LangGraph mà không cần audio/STT
 
-Chi tiết flow xem thêm: `docs/in_meeting_flow.md`.
+Chi tiết flow xem thêm: `docs/architecture/in_meeting_flow.md`.
 
 ---
 
 ## 1) UI flow (Electron) — tab “Trong họp”
 1. Mở `Meeting detail` → tab **Trong họp** → bấm **Tham gia cuộc họp**.
-2. Nhập link (GoMeet/Google Meet) và giữ **Session ID = meeting.id** (khuyến nghị để persist transcript vào DB theo meeting).
+2. Nhập link Google Meet và giữ **Session ID = meeting.id** (khuyến nghị để persist transcript vào DB theo meeting).
 3. Bấm **Áp dụng**:
    - UI gọi `POST /api/v1/sessions` để khởi tạo realtime session.
    - UI tự kết nối `WS /api/v1/ws/frontend/{session_id}` để nhận realtime feed.
-4. (Tuỳ chọn) Bấm **Lấy audio_ingest_token** để phát token cho Bridge đẩy audio vào `WS /ws/audio`.
+4. (Tuỳ chọn) Bấm **Lấy audio_ingest_token** để client stream audio tab vào `WS /ws/audio`.
 5. (Tuỳ chọn) Bật **test ingest** và bơm transcript test để kiểm UI/bus/LangGraph ngay trong app.
 
 ---
@@ -38,10 +38,8 @@ Gợi ý request (dùng `session_id = meeting.id`):
 }
 ```
 
-### 2.2 REST: lấy audio_ingest_token cho Bridge
-`POST /api/v1/sessions/{session_id}/sources?platform=vnpt_gomeet`
-
-Nếu bạn tích hợp GoMeet theo mô hình “MeetMate push” (MeetMate gọi GoMeet control API để bật bridge), xem thêm: `docs/gomeet_control_api_spec.md`.
+### 2.2 REST: lấy audio_ingest_token cho client
+`POST /api/v1/sessions/{session_id}/sources?platform=google_meet_tab`
 
 ### 2.3 WS: frontend nhận realtime (1 WS duy nhất)
 `wss://<host>/api/v1/ws/frontend/{session_id}`
@@ -73,6 +71,7 @@ ACK:
 ### 2.5 WS: raw audio ingest (production)
 `wss://<host>/api/v1/ws/audio/{session_id}?token={audio_ingest_token}`
 - Gửi `start` JSON, sau đó stream **binary PCM frames** (S16LE mono 16kHz).
+ - Partial hiển thị realtime trên WS frontend; final (khoảng mỗi 10s) được persist vào DB.
 
 ---
 
@@ -94,7 +93,7 @@ Nếu in ra `False` → cần redeploy backend mới (root directory đúng là 
 Chạy script: `backend/tests/test_ingest_ws.py` (chỉnh `WS_URL` và `session_id` theo môi trường).
 
 ### 3.2 Stream audio (production)
-Bạn có thể dùng bridge (GoMeet/Google Meet) hoặc chạy script mẫu:
+Bạn có thể stream trực tiếp từ tab audio share hoặc chạy script mẫu:
 - `backend/tests/test_audio_ws.py` (end-to-end: mở `WS /ws/frontend` để in ra `transcript_event/state`)
 - `backend/tests/test_audio_ingest_ws.py` (quick check: chỉ test `WS /ws/audio` và log `audio_start_ack`/error)
 Script đọc WAV PCM 16kHz mono và stream vào `WS /ws/audio`, đồng thời mở `WS /ws/frontend` để in ra event.
