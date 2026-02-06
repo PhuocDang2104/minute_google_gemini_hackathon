@@ -3,8 +3,9 @@ Video Service
 Handle video upload and processing for meetings
 """
 import logging
+from datetime import datetime
 from typing import Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 from fastapi import UploadFile, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -113,6 +114,8 @@ async def upload_meeting_video(
     
     # Upload to storage
     file_url = None
+    recording_storage_key = None
+    provider = None
     try:
         if is_storage_configured():
             # Upload to Supabase S3
@@ -124,6 +127,8 @@ async def upload_meeting_video(
             if uploaded_key:
                 # Generate presigned URL (24 hours expiration)
                 file_url = generate_presigned_get_url(uploaded_key, expires_in=86400)
+                recording_storage_key = uploaded_key
+                provider = "supabase"
                 logger.info(f"Video uploaded to storage: {storage_key}")
             else:
                 logger.warning("Storage upload returned None, falling back to local")
@@ -160,35 +165,77 @@ async def upload_meeting_video(
         try:
             stored_path.write_bytes(content)
             file_url = f"/files/videos/{stored_name}"
+            recording_storage_key = f"videos/{stored_name}"
+            provider = "local"
             logger.info(f"Video saved locally: {stored_path}")
         except Exception as e:
             logger.error(f"Local save failed: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail="Failed to save video file")
     
-    # Update meeting with recording_url
+    # Persist recording metadata and update meeting.recording_url
     try:
-        from app.schemas.meeting import MeetingUpdate
-        updated_meeting = meeting_service.update_meeting(
-            db,
-            meeting_id,
-            MeetingUpdate(recording_url=file_url)
+        recording_id = str(uuid4())
+        now = datetime.utcnow()
+        db.execute(
+            text("""
+                INSERT INTO meeting_recording (
+                    id, meeting_id, file_url, storage_key, provider,
+                    original_filename, content_type, size_bytes,
+                    duration_sec, uploaded_by, status, created_at, updated_at
+                )
+                VALUES (
+                    :id, :meeting_id, :file_url, :storage_key, :provider,
+                    :original_filename, :content_type, :size_bytes,
+                    :duration_sec, :uploaded_by, :status, :created_at, :updated_at
+                )
+            """),
+            {
+                "id": recording_id,
+                "meeting_id": meeting_id,
+                "file_url": file_url,
+                "storage_key": recording_storage_key,
+                "provider": provider,
+                "original_filename": filename,
+                "content_type": file.content_type,
+                "size_bytes": file_size,
+                "duration_sec": None,
+                "uploaded_by": uploaded_by,
+                "status": "uploaded",
+                "created_at": now,
+                "updated_at": now,
+            },
         )
-        
-        if not updated_meeting:
+        result = db.execute(
+            text("""
+                UPDATE meeting
+                SET recording_url = :recording_url
+                WHERE id = :meeting_id
+                RETURNING id
+            """),
+            {
+                "recording_url": file_url,
+                "meeting_id": meeting_id,
+            },
+        )
+        if not result.fetchone():
             raise HTTPException(status_code=500, detail="Failed to update meeting")
-        
+
+        db.commit()
         logger.info(f"Meeting {meeting_id} updated with recording_url: {file_url}")
-        
+
         return {
+            "recording_id": recording_id,
             "recording_url": file_url,
             "message": "Video uploaded successfully",
             "file_size": file_size,
-            "storage_key": storage_key if is_storage_configured() else None,
+            "storage_key": recording_storage_key,
+            "provider": provider,
         }
         
     except Exception as e:
+        db.rollback()
         logger.error(f"Failed to update meeting: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to update meeting with video URL")
+        raise HTTPException(status_code=500, detail="Failed to save video metadata")
 
 
 async def get_video_url(db: Session, meeting_id: str) -> Optional[str]:
@@ -236,18 +283,40 @@ async def delete_meeting_video(db: Session, meeting_id: str) -> bool:
     try:
         # 1. Delete video file from storage or local filesystem
         try:
-            # If local file path (/files/...), delete local file
-            if recording_url.startswith("/files/"):
+            # Prefer deleting from meeting_recording metadata if available
+            recordings = db.execute(
+                text("""
+                    SELECT id::text, file_url, storage_key, provider
+                    FROM meeting_recording
+                    WHERE meeting_id = :meeting_id
+                """),
+                {"meeting_id": meeting_id},
+            ).fetchall()
+
+            for row in recordings:
+                file_url = row[1]
+                storage_key = row[2]
+                provider = (row[3] or "").lower()
+
+                if provider == "supabase" and storage_key:
+                    from app.services.storage_client import delete_object
+                    deleted = delete_object(storage_key)
+                    if deleted:
+                        logger.info(f"Deleted storage object: {storage_key}")
+                elif file_url and file_url.startswith("/files/"):
+                    from pathlib import Path
+                    local_path = Path(__file__).parent.parent.parent / file_url.lstrip("/")
+                    if local_path.exists():
+                        local_path.unlink()
+                        logger.info(f"Deleted local video file: {local_path}")
+
+            # Fallback: if no recording rows and local file path, try deleting by recording_url
+            if not recordings and recording_url.startswith("/files/"):
                 from pathlib import Path
                 local_path = Path(__file__).parent.parent.parent / recording_url.lstrip("/")
                 if local_path.exists():
                     local_path.unlink()
                     logger.info(f"Deleted local video file: {local_path}")
-            
-            # Note: If recording_url is a presigned URL, we cannot delete the actual file
-            # from Supabase Storage because we don't have the storage_key stored.
-            # The file will remain in storage but become inaccessible after URL expiration.
-            # To properly delete from storage, we would need to store storage_key in the database.
             
         except Exception as e:
             logger.warning(f"Failed to delete video file (continuing to clear metadata): {e}", exc_info=True)
@@ -274,7 +343,16 @@ async def delete_meeting_video(db: Session, meeting_id: str) -> bool:
         except Exception as e:
             logger.warning(f"Failed to delete meeting minutes: {e}", exc_info=True)
         
-        # 4. Clear recording_url from database using direct SQL (MeetingUpdate skips None values)
+        # 4. Delete recording metadata rows
+        try:
+            db.execute(
+                text("DELETE FROM meeting_recording WHERE meeting_id = :meeting_id"),
+                {'meeting_id': meeting_id}
+            )
+        except Exception as e:
+            logger.warning(f"Failed to delete meeting_recording rows: {e}", exc_info=True)
+
+        # 5. Clear recording_url from database using direct SQL (MeetingUpdate skips None values)
         try:
             db.execute(
                 text("UPDATE meeting SET recording_url = NULL WHERE id = :meeting_id"),
@@ -292,4 +370,3 @@ async def delete_meeting_video(db: Session, meeting_id: str) -> bool:
         db.rollback()
         logger.error(f"Failed to delete video and metadata: {e}", exc_info=True)
         return False
-

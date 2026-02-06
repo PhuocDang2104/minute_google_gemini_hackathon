@@ -43,6 +43,7 @@ class Meeting(Base, UUIDMixin, TimestampMixin):
     context_windows = relationship("app.models.timeline.ContextWindow", back_populates="meeting", cascade="all, delete-orphan")
     summaries = relationship("app.models.summary.MeetingSummary", back_populates="meeting", cascade="all, delete-orphan")
     chat_sessions = relationship("app.models.chat_session.ChatSession", back_populates="meeting", cascade="all, delete-orphan")
+    recordings = relationship("app.models.meeting_recording.MeetingRecording", back_populates="meeting", cascade="all, delete-orphan")
 
 
 class MeetingParticipant(Base):

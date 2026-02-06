@@ -17,6 +17,7 @@ from .adr import (
 from .timeline import RecapSegment, VisualEvent, ContextWindow
 from .summary import MeetingSummary
 from .study import NoteItem, QuizItem
+from .meeting_recording import MeetingRecording
 
 __all__ = [
     'Organization',
@@ -41,6 +42,7 @@ __all__ = [
     'VisualEvent',
     'ContextWindow',
     'MeetingSummary',
+    'MeetingRecording',
     'NoteItem',
     'QuizItem',
 ]

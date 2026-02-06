@@ -1,9 +1,16 @@
 import os
+import sys
+from pathlib import Path
 from logging.config import fileConfig   # Cấu hình logging
 from typing_extensions import runtime
 from sqlalchemy import engine_from_config   #Tạo SQLAlchemy engine
 from sqlalchemy import pool # Quản lý kết nối DB
 from alembic import context # Alembic migration context
+# Ensure backend/ is on sys.path so `import app` works in all environments.
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+
 from app.core.config import get_settings
 
 # this is the Alembic Config object, which provides access to the values within the .ini file in use.
