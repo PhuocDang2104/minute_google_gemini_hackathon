@@ -2,6 +2,7 @@
 Meeting Minutes Service
 """
 from datetime import datetime
+import logging
 from typing import List, Optional, Tuple, Dict, Any
 from uuid import uuid4
 from sqlalchemy.orm import Session
@@ -18,6 +19,8 @@ from app.utils.markdown_utils import render_markdown_to_html
 from app.services import meeting_service, participant_service
 from pathlib import Path
 from datetime import timezone
+
+logger = logging.getLogger(__name__)
 
 
 def _hydrate_minutes_html(minutes: MeetingMinutesResponse) -> MeetingMinutesResponse:
@@ -402,40 +405,61 @@ async def generate_minutes_with_ai(
     # Get transcript
     transcript = ""
     if request.include_transcript:
-        transcript = transcript_service.get_full_transcript(db, meeting_id)
+        try:
+            transcript = transcript_service.get_full_transcript(db, meeting_id)
+        except Exception as exc:
+            logger.warning("Failed to fetch transcript for meeting %s: %s", meeting_id, exc)
+            transcript = ""
     
     # Get action items
     actions = []
     if request.include_actions:
-        action_list = action_item_service.list_action_items(db, meeting_id)
-        actions = [item.description for item in action_list.items]
+        try:
+            action_list = action_item_service.list_action_items(db, meeting_id)
+            actions = [item.description for item in action_list.items]
+        except Exception as exc:
+            logger.warning("Failed to fetch action items for meeting %s: %s", meeting_id, exc)
+            actions = []
     
     # Get decisions
     decisions = []
     if request.include_decisions:
-        decision_list = action_item_service.list_decision_items(db, meeting_id)
-        decisions = [item.description for item in decision_list.items]
+        try:
+            decision_list = action_item_service.list_decision_items(db, meeting_id)
+            decisions = [item.description for item in decision_list.items]
+        except Exception as exc:
+            logger.warning("Failed to fetch decisions for meeting %s: %s", meeting_id, exc)
+            decisions = []
     
     # Get risks
     risks = []
     if request.include_risks:
-        risk_list = action_item_service.list_risk_items(db, meeting_id)
-        risks = [f"{item.description} (Severity: {item.severity})" for item in risk_list.items]
+        try:
+            risk_list = action_item_service.list_risk_items(db, meeting_id)
+            risks = [f"{item.description} (Severity: {item.severity})" for item in risk_list.items]
+        except Exception as exc:
+            logger.warning("Failed to fetch risks for meeting %s: %s", meeting_id, exc)
+            risks = []
     
     # Get related documents (titles/descriptions) linked to meeting
-    doc_rows = db.execute(
-        text(
-            """
-            SELECT title, description, file_type
-            FROM knowledge_document
-            WHERE meeting_id = :meeting_id
-            ORDER BY created_at DESC
-            LIMIT 10
-            """
-        ),
-        {'meeting_id': meeting_id},
-    ).fetchall()
-    related_docs = [f"{r[0]} ({r[2]}) - {r[1] or ''}".strip() for r in doc_rows]
+    related_docs = []
+    try:
+        doc_rows = db.execute(
+            text(
+                """
+                SELECT title, description, file_type
+                FROM knowledge_document
+                WHERE meeting_id = :meeting_id
+                ORDER BY created_at DESC
+                LIMIT 10
+                """
+            ),
+            {'meeting_id': meeting_id},
+        ).fetchall()
+        related_docs = [f"{r[0]} ({r[2]}) - {r[1] or ''}".strip() for r in doc_rows]
+    except Exception as exc:
+        logger.warning("Failed to fetch related documents for meeting %s: %s", meeting_id, exc)
+        related_docs = []
 
     # Build context payload for LLM
     context_payload = {
