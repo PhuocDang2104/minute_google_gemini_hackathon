@@ -8,6 +8,8 @@ import MeetingPost from '../routes/Meetings/MeetingPost'
 import MeetingDock from '../routes/Meetings/MeetingDock'
 import MeetingCapture from '../routes/Meetings/MeetingCapture'
 import KnowledgeHub from '../routes/KnowledgeHub'
+import Projects from '../routes/Projects'
+import ProjectDetail from '../routes/Projects/ProjectDetail'
 import Tasks from '../routes/Tasks'
 import Settings from '../routes/Settings'
 import About from '../routes/About'
@@ -37,6 +39,14 @@ const router = createHashRouter([
       {
         path: 'meetings',
         element: <Meetings />,
+      },
+      {
+        path: 'projects',
+        element: <Projects />,
+      },
+      {
+        path: 'projects/:projectId',
+        element: <ProjectDetail />,
       },
       {
         path: 'meetings/:meetingId/detail',

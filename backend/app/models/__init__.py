@@ -1,4 +1,4 @@
-from .user import Organization, Department, Project, UserAccount
+from .user import Organization, Department, Project, ProjectMember, UserAccount
 from .meeting import Meeting
 from .document import Document
 from .embedding import Embedding
@@ -23,6 +23,7 @@ __all__ = [
     'Organization',
     'Department',
     'Project',
+    'ProjectMember',
     'UserAccount',
     'Meeting',
     'Document',

@@ -46,6 +46,7 @@ class MeetingUpdate(BaseModel):
     end_time: Optional[datetime] = None
     meeting_type: Optional[str] = None
     phase: Optional[str] = None
+    project_id: Optional[str] = None
     location: Optional[str] = None
     teams_link: Optional[str] = None
     recording_url: Optional[str] = None

@@ -8,12 +8,14 @@ class ProjectBase(BaseModel):
     code: Optional[str] = None
     description: Optional[str] = None
     objective: Optional[str] = None  # Project objectives/goals
+    status: Optional[str] = None  # active / archived
+    owner_id: Optional[str] = None
     organization_id: Optional[str] = None
     department_id: Optional[str] = None
 
 
 class ProjectCreate(ProjectBase):
-    owner_id: Optional[str] = None
+    pass
 
 
 class ProjectUpdate(BaseModel):
@@ -21,6 +23,8 @@ class ProjectUpdate(BaseModel):
     code: Optional[str] = None
     description: Optional[str] = None
     objective: Optional[str] = None  # Project objectives/goals
+    status: Optional[str] = None  # active / archived
+    owner_id: Optional[str] = None
     organization_id: Optional[str] = None
     department_id: Optional[str] = None
 
@@ -28,6 +32,9 @@ class ProjectUpdate(BaseModel):
 class Project(ProjectBase):
     id: str
     owner_id: Optional[str] = None
+    meeting_count: Optional[int] = None
+    document_count: Optional[int] = None
+    member_count: Optional[int] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -47,6 +54,11 @@ class ProjectMember(BaseModel):
     joined_at: Optional[datetime] = None
     display_name: Optional[str] = None
     email: Optional[str] = None
+
+
+class ProjectMemberCreate(BaseModel):
+    user_id: str
+    role: Optional[str] = Field(default='member')
 
 
 class ProjectMemberList(BaseModel):

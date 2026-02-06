@@ -8,6 +8,7 @@ import { meetingsApi } from '../../../lib/api/meetings';
 interface CreateMeetingFormProps {
   onSuccess: (meetingId: string) => void;
   onCancel: () => void;
+  projectId?: string;
 }
 
 const MEETING_TYPE_OPTIONS = Object.entries(MEETING_TYPE_LABELS).map(([value, label]) => ({
@@ -46,7 +47,7 @@ interface FormErrors {
   start_time?: string;
 }
 
-export const CreateMeetingForm = ({ onSuccess, onCancel }: CreateMeetingFormProps) => {
+export const CreateMeetingForm = ({ onSuccess, onCancel, projectId }: CreateMeetingFormProps) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -84,6 +85,9 @@ export const CreateMeetingForm = ({ onSuccess, onCancel }: CreateMeetingFormProp
         // Default 1 hour duration
         end_time: new Date(now.getTime() + 60 * 60 * 1000).toISOString(),
       };
+      if (projectId) {
+        payload.project_id = projectId;
+      }
 
       const response = await meetingsApi.create(payload);
       onSuccess(response.id);

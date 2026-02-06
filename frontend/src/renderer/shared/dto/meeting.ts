@@ -33,6 +33,50 @@ export interface Meeting {
   participants?: any[]; // Simplified for now
 }
 
+export interface MeetingCreate {
+  title: string;
+  description?: string;
+  start_time?: string;
+  end_time?: string;
+  meeting_type?: MeetingType;
+  project_id?: string;
+  department_id?: string;
+  location?: string;
+  teams_link?: string;
+  organizer_id?: string;
+  participant_ids?: string[];
+}
+
+export interface MeetingUpdate {
+  title?: string;
+  description?: string;
+  start_time?: string;
+  end_time?: string;
+  meeting_type?: MeetingType;
+  phase?: MeetingPhase;
+  project_id?: string;
+  location?: string;
+  teams_link?: string;
+  recording_url?: string;
+}
+
+export interface MeetingWithParticipants extends Meeting {
+  participants?: User[];
+}
+
+export interface MeetingListResponse {
+  meetings: Meeting[];
+  total: number;
+}
+
+export interface MeetingFilters {
+  skip?: number;
+  limit?: number;
+  phase?: MeetingPhase;
+  meeting_type?: MeetingType;
+  project_id?: string;
+}
+
 // Meeting type labels
 export const MEETING_TYPE_LABELS: Record<string, string> = {
   project_meeting: 'Họp dự án',

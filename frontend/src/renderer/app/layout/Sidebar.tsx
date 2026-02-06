@@ -5,12 +5,15 @@ import {
   Users,
   Settings,
   Info,
-  Loader2,
+  FolderPlus,
+  Calendar,
 } from 'lucide-react'
 import { currentUser, getInitials } from '../../store/mockData'
 import { getStoredUser } from '../../lib/api/auth'
 import { Modal } from '../../components/ui/Modal'
 import { CreateMeetingForm } from '../../features/meetings/components/CreateMeetingForm'
+import { projectsApi } from '../../lib/api/projects'
+import { USE_API } from '../../config/env'
 
 interface NavItem {
   path: string
@@ -23,12 +26,63 @@ const Sidebar = () => {
   const navigate = useNavigate()
   const storedUser = getStoredUser()
   const displayUser = storedUser || currentUser
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+
+  const [isCreateMenuOpen, setIsCreateMenuOpen] = useState(false)
+  const [isMeetingModalOpen, setIsMeetingModalOpen] = useState(false)
+  const [isProjectModalOpen, setIsProjectModalOpen] = useState(false)
+  const [isCreatingProject, setIsCreatingProject] = useState(false)
+  const [projectError, setProjectError] = useState<string | null>(null)
+  const [createProjectForm, setCreateProjectForm] = useState({
+    name: '',
+    code: '',
+    description: '',
+    objective: '',
+  })
 
   const handleCreateSuccess = (meetingId?: string) => {
-    setIsCreateModalOpen(false)
+    setIsMeetingModalOpen(false)
     if (meetingId) {
       navigate(`/app/meetings/${meetingId}/detail`)
+    }
+  }
+
+  const openNewProject = () => {
+    setIsCreateMenuOpen(false)
+    setProjectError(null)
+    setIsProjectModalOpen(true)
+  }
+
+  const openNewSession = () => {
+    setIsCreateMenuOpen(false)
+    setIsMeetingModalOpen(true)
+  }
+
+  const handleCreateProject = async () => {
+    if (!createProjectForm.name.trim()) return
+    setIsCreatingProject(true)
+    setProjectError(null)
+
+    try {
+      if (!USE_API) {
+        setIsProjectModalOpen(false)
+        setCreateProjectForm({ name: '', code: '', description: '', objective: '' })
+        return
+      }
+
+      const created = await projectsApi.create({
+        name: createProjectForm.name.trim(),
+        code: createProjectForm.code.trim() || undefined,
+        description: createProjectForm.description.trim() || undefined,
+        objective: createProjectForm.objective.trim() || undefined,
+      })
+      setIsProjectModalOpen(false)
+      setCreateProjectForm({ name: '', code: '', description: '', objective: '' })
+      navigate(`/app/projects/${created.id}`)
+    } catch (err) {
+      console.error('Create project failed:', err)
+      setProjectError('Không thể tạo dự án. Vui lòng thử lại.')
+    } finally {
+      setIsCreatingProject(false)
     }
   }
 
@@ -59,12 +113,11 @@ const Sidebar = () => {
 
       {/* Navigation */}
       <nav className="sidebar__nav">
-        {/* New Meeting Button */}
         <div className="sidebar__nav-section">
           <ul className="sidebar__nav-list">
             <li className="sidebar__nav-item">
               <button
-                onClick={() => setIsCreateModalOpen(true)}
+                onClick={() => setIsCreateMenuOpen(true)}
                 className="sidebar__nav-link sidebar__nav-link--action"
                 style={{ width: '100%', textAlign: 'left', border: 'none', cursor: 'pointer' }}
               >
@@ -72,7 +125,7 @@ const Sidebar = () => {
                   <Plus size={20} />
                 </span>
                 <span className="sidebar__nav-label">
-                  Cuộc họp mới
+                  Tạo mới
                 </span>
               </button>
             </li>
@@ -81,7 +134,7 @@ const Sidebar = () => {
                 <NavLink
                   to={item.path}
                   className={({ isActive }) => {
-                    const active = isActive || location.pathname.startsWith('/app/meetings/')
+                    const active = isActive || location.pathname.startsWith(`${item.path}/`)
                     return `sidebar__nav-link ${active ? 'active' : ''}`
                   }}
                 >
@@ -93,10 +146,8 @@ const Sidebar = () => {
           </ul>
         </div>
 
-        {/* Spacer */}
         <div style={{ flex: 1 }} />
 
-        {/* Bottom Navigation */}
         <div className="sidebar__nav-section">
           <ul className="sidebar__nav-list">
             {bottomNavItems.map((item) => (
@@ -129,22 +180,109 @@ const Sidebar = () => {
         </div>
       </div>
 
+      {/* Create Menu */}
+      <Modal
+        isOpen={isCreateMenuOpen}
+        onClose={() => setIsCreateMenuOpen(false)}
+        title="Tạo mới"
+        size="sm"
+      >
+        <div className="create-menu">
+          <button className="create-menu__item" onClick={openNewProject}>
+            <div className="create-menu__icon">
+              <FolderPlus size={18} />
+            </div>
+            <div className="create-menu__content">
+              <div className="create-menu__title">Dự án mới</div>
+              <div className="create-menu__desc">Tạo folder dự án mới</div>
+            </div>
+          </button>
+          <button className="create-menu__item" onClick={openNewSession}>
+            <div className="create-menu__icon create-menu__icon--alt">
+              <Calendar size={18} />
+            </div>
+            <div className="create-menu__content">
+              <div className="create-menu__title">Phiên mới</div>
+              <div className="create-menu__desc">Tạo phiên làm việc mới</div>
+            </div>
+          </button>
+        </div>
+      </Modal>
+
       {/* Create Meeting Modal */}
       <Modal
-        isOpen={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
+        isOpen={isMeetingModalOpen}
+        onClose={() => setIsMeetingModalOpen(false)}
         title="Tạo phiên làm việc mới"
         size="lg"
       >
         <CreateMeetingForm
           onSuccess={handleCreateSuccess}
-          onCancel={() => setIsCreateModalOpen(false)}
+          onCancel={() => setIsMeetingModalOpen(false)}
         />
+      </Modal>
+
+      {/* Create Project Modal */}
+      <Modal
+        isOpen={isProjectModalOpen}
+        onClose={() => setIsProjectModalOpen(false)}
+        title="Tạo dự án mới"
+        size="lg"
+      >
+        <div className="project-modal">
+          {projectError && (
+            <div className="form-error">
+              {projectError}
+            </div>
+          )}
+          <div className="project-modal__grid">
+            <label>
+              <span>Tên dự án *</span>
+              <input
+                value={createProjectForm.name}
+                onChange={(e) => setCreateProjectForm(prev => ({ ...prev, name: e.target.value }))}
+                placeholder="VD: Core Banking Modernization"
+              />
+            </label>
+            <label>
+              <span>Mã dự án</span>
+              <input
+                value={createProjectForm.code}
+                onChange={(e) => setCreateProjectForm(prev => ({ ...prev, code: e.target.value }))}
+                placeholder="CB-2024"
+              />
+            </label>
+            <label className="project-modal__full">
+              <span>Mô tả</span>
+              <textarea
+                rows={3}
+                value={createProjectForm.description}
+                onChange={(e) => setCreateProjectForm(prev => ({ ...prev, description: e.target.value }))}
+                placeholder="Tóm tắt dự án, phạm vi, stakeholder..."
+              />
+            </label>
+            <label className="project-modal__full">
+              <span>Mục tiêu</span>
+              <textarea
+                rows={3}
+                value={createProjectForm.objective}
+                onChange={(e) => setCreateProjectForm(prev => ({ ...prev, objective: e.target.value }))}
+                placeholder="Mô tả các OKR, goal chính..."
+              />
+            </label>
+          </div>
+          <div className="project-modal__actions">
+            <button className="btn btn--secondary" onClick={() => setIsProjectModalOpen(false)} disabled={isCreatingProject}>
+              Hủy
+            </button>
+            <button className="btn btn--primary" onClick={handleCreateProject} disabled={!createProjectForm.name.trim() || isCreatingProject}>
+              {isCreatingProject ? 'Đang tạo...' : 'Tạo dự án'}
+            </button>
+          </div>
+        </div>
       </Modal>
     </aside>
   )
 }
 
 export default Sidebar
-
-

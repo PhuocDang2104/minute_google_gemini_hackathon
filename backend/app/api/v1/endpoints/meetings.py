@@ -24,7 +24,7 @@ router = APIRouter()
 @router.get('/', response_model=MeetingList)
 def list_meetings(
     skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=100),
+    limit: int = Query(50, ge=1, le=400),
     phase: Optional[str] = None,
     meeting_type: Optional[str] = None,
     project_id: Optional[str] = None,

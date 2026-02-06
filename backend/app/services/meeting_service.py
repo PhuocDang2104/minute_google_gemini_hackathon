@@ -266,6 +266,10 @@ def update_meeting(db: Session, meeting_id: str, payload: MeetingUpdate) -> Opti
     if payload.phase is not None:
         update_fields.append("phase = :phase")
         params['phase'] = payload.phase
+
+    if payload.project_id is not None:
+        update_fields.append("project_id = :project_id")
+        params['project_id'] = payload.project_id
     
     if payload.location is not None:
         update_fields.append("location = :location")
