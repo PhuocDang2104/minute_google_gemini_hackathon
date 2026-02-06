@@ -152,9 +152,7 @@ async def upload_meeting_video(
     
     # Fallback to local storage if S3 not configured or failed
     if not file_url:
-        import os
         from pathlib import Path
-        from uuid import uuid4
         
         upload_dir = Path(__file__).parent.parent.parent / "uploaded_files" / "videos"
         upload_dir.mkdir(parents=True, exist_ok=True)

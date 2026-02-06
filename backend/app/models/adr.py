@@ -37,13 +37,25 @@ class ActionItem(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "action_item"
 
     meeting_id = Column(UUID(as_uuid=True), ForeignKey("meeting.id", ondelete="CASCADE"), nullable=False)
+    project_id = Column(UUID(as_uuid=True), ForeignKey("project.id"), nullable=True)
     description = Column(Text, nullable=False)
-    owner = Column(String)
-    due_date = Column(DateTime(timezone=True))
+    # New schema
+    owner_user_id = Column(UUID(as_uuid=True), ForeignKey("user_account.id"), nullable=True)
+    deadline = Column(DateTime(timezone=True))
     priority = Column(String)
+    status = Column(String)
+    source_chunk_id = Column(UUID(as_uuid=True), nullable=True)
     topic_id = Column(String)
     source_timecode = Column(Float)
     source_text = Column(Text)
+    external_task_link = Column(Text)
+    external_task_id = Column(String)
+    confirmed_by = Column(UUID(as_uuid=True), ForeignKey("user_account.id"), nullable=True)
+    confirmed_at = Column(DateTime(timezone=True))
+
+    # Legacy fields (kept for backward compatibility)
+    owner = Column(String)
+    due_date = Column(DateTime(timezone=True))
     external_id = Column(String)
     confirmed = Column(Boolean, default=False)
 
@@ -54,6 +66,14 @@ class DecisionItem(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "decision_item"
 
     meeting_id = Column(UUID(as_uuid=True), ForeignKey("meeting.id", ondelete="CASCADE"), nullable=False)
+    # New schema
+    description = Column(Text)
+    status = Column(String)
+    source_chunk_id = Column(UUID(as_uuid=True), nullable=True)
+    confirmed_by = Column(UUID(as_uuid=True), ForeignKey("user_account.id"), nullable=True)
+    confirmed_at = Column(DateTime(timezone=True))
+
+    # Legacy fields
     title = Column(String, nullable=False)
     rationale = Column(Text)
     impact = Column(Text)
@@ -71,6 +91,12 @@ class RiskItem(Base, UUIDMixin, TimestampMixin):
     description = Column(Text, nullable=False)
     severity = Column(String)
     mitigation = Column(Text)
+    # New schema
+    owner_user_id = Column(UUID(as_uuid=True), ForeignKey("user_account.id"), nullable=True)
+    status = Column(String)
+    source_chunk_id = Column(UUID(as_uuid=True), nullable=True)
+
+    # Legacy fields
     owner = Column(String)
     topic_id = Column(String)
     source_timecode = Column(Float)
