@@ -6,6 +6,8 @@ import {
   FileText,
   FolderOpen,
   Plus,
+  MoreVertical,
+  ChevronRight,
   Edit3,
   Upload,
   AlertCircle,
@@ -20,6 +22,7 @@ import type { Project } from '../../../shared/dto/project'
 import type { Meeting } from '../../../shared/dto/meeting'
 import { useChatContext } from '../../../contexts/ChatContext'
 import CreateMeetingForm from '../../../features/meetings/components/CreateMeetingForm'
+import { USE_API } from '../../../config/env'
 
 type TabKey = 'overview' | 'meetings' | 'documents'
 
@@ -37,6 +40,11 @@ const ProjectDetail = () => {
   const [showEditModal, setShowEditModal] = useState(false)
   const [showUploadModal, setShowUploadModal] = useState(false)
   const [showCreateMeetingModal, setShowCreateMeetingModal] = useState(false)
+  const [openMeetingMenuId, setOpenMeetingMenuId] = useState<string | null>(null)
+  const [renameMeetingModal, setRenameMeetingModal] = useState<Meeting | null>(null)
+  const [renameMeetingValue, setRenameMeetingValue] = useState('')
+  const [renameMeetingError, setRenameMeetingError] = useState<string | null>(null)
+  const [isRenamingMeeting, setIsRenamingMeeting] = useState(false)
 
   const [editForm, setEditForm] = useState({
     name: '',
@@ -59,6 +67,13 @@ const ProjectDetail = () => {
   useEffect(() => {
     return () => clearOverride()
   }, [clearOverride])
+
+  useEffect(() => {
+    if (!openMeetingMenuId) return
+    const handleClick = () => setOpenMeetingMenuId(null)
+    window.addEventListener('click', handleClick)
+    return () => window.removeEventListener('click', handleClick)
+  }, [openMeetingMenuId])
 
   const loadProject = async () => {
     if (!projectId) return
@@ -100,6 +115,63 @@ const ProjectDetail = () => {
     setShowCreateMeetingModal(false)
     loadProject()
     navigate(`/app/meetings/${meetingId}/detail`)
+  }
+
+  const openRenameMeeting = (meeting: Meeting) => {
+    setRenameMeetingModal(meeting)
+    setRenameMeetingValue(meeting.title)
+    setRenameMeetingError(null)
+    setIsRenamingMeeting(false)
+    setOpenMeetingMenuId(null)
+  }
+
+  const handleRenameMeetingSubmit = async () => {
+    if (!renameMeetingModal) return
+    const nextTitle = renameMeetingValue.trim()
+    if (!nextTitle) {
+      setRenameMeetingError('Vui lòng nhập tên mới.')
+      return
+    }
+    setIsRenamingMeeting(true)
+    setRenameMeetingError(null)
+    try {
+      if (USE_API) {
+        const updated = await meetingsApi.update(renameMeetingModal.id, { title: nextTitle })
+        setMeetings(prev => prev.map(m => (m.id === renameMeetingModal.id ? { ...m, ...updated } : m)))
+      } else {
+        setMeetings(prev => prev.map(m => (m.id === renameMeetingModal.id ? { ...m, title: nextTitle } : m)))
+      }
+      setRenameMeetingModal(null)
+    } catch (err) {
+      console.error('Rename meeting failed:', err)
+      setRenameMeetingError('Không thể đổi tên phiên. Vui lòng thử lại.')
+    } finally {
+      setIsRenamingMeeting(false)
+    }
+  }
+
+  const handleDeleteMeeting = async (meeting: Meeting) => {
+    const confirmed = window.confirm(`Xóa phiên "${meeting.title}"? Hành động này không thể hoàn tác.`)
+    if (!confirmed) {
+      setOpenMeetingMenuId(null)
+      return
+    }
+    try {
+      if (USE_API) {
+        await meetingsApi.delete(meeting.id)
+      }
+      setMeetings(prev => prev.filter(m => m.id !== meeting.id))
+      setProject(prev => {
+        if (!prev) return prev
+        const current = prev.meeting_count ?? meetings.length
+        return { ...prev, meeting_count: Math.max(0, current - 1) }
+      })
+    } catch (err) {
+      console.error('Delete meeting failed:', err)
+      setError('Không thể xóa phiên. Vui lòng thử lại.')
+    } finally {
+      setOpenMeetingMenuId(null)
+    }
   }
 
   const handleSaveProject = async () => {
@@ -219,7 +291,36 @@ const ProjectDetail = () => {
                         {meeting.start_time ? `${formatDate(new Date(meeting.start_time))} · ${formatTime(new Date(meeting.start_time))}` : 'Chưa có thời gian'}
                       </div>
                     </div>
-                    <span className="project-list__cta">Mở</span>
+                    <div className="project-list__actions">
+                      <span className="project-list__cta">Mở</span>
+                      <div
+                        className="drive-menu-wrapper"
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                        }}
+                      >
+                        <button
+                          type="button"
+                          className="drive-menu-trigger"
+                          aria-label="Session menu"
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            setOpenMeetingMenuId(prev => (prev === meeting.id ? null : meeting.id))
+                          }}
+                        >
+                          <MoreVertical size={16} />
+                        </button>
+                        {openMeetingMenuId === meeting.id && (
+                          <ProjectMeetingMenu
+                            onRename={() => openRenameMeeting(meeting)}
+                            onRemove={() => handleDeleteMeeting(meeting)}
+                            onClose={() => setOpenMeetingMenuId(null)}
+                          />
+                        )}
+                      </div>
+                    </div>
                   </Link>
                 ))}
               </div>
@@ -271,7 +372,36 @@ const ProjectDetail = () => {
                       {meeting.start_time ? `${formatDate(new Date(meeting.start_time))} · ${formatTime(new Date(meeting.start_time))}` : 'Chưa có thời gian'}
                     </div>
                   </div>
-                  <span className="project-table__status">{meeting.phase}</span>
+                  <div className="project-table__actions">
+                    <span className="project-table__status">{meeting.phase}</span>
+                    <div
+                      className="drive-menu-wrapper"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                      }}
+                    >
+                      <button
+                        type="button"
+                        className="drive-menu-trigger"
+                        aria-label="Session menu"
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          setOpenMeetingMenuId(prev => (prev === meeting.id ? null : meeting.id))
+                        }}
+                      >
+                        <MoreVertical size={16} />
+                      </button>
+                      {openMeetingMenuId === meeting.id && (
+                        <ProjectMeetingMenu
+                          onRename={() => openRenameMeeting(meeting)}
+                          onRemove={() => handleDeleteMeeting(meeting)}
+                          onClose={() => setOpenMeetingMenuId(null)}
+                        />
+                      )}
+                    </div>
+                  </div>
                 </Link>
               ))}
             </div>
@@ -367,6 +497,38 @@ const ProjectDetail = () => {
         </div>
       </Modal>
 
+      <Modal
+        isOpen={!!renameMeetingModal}
+        onClose={() => setRenameMeetingModal(null)}
+        title="Đổi tên phiên"
+        size="sm"
+      >
+        <div className="rename-modal">
+          {renameMeetingError && (
+            <div className="form-error">
+              {renameMeetingError}
+            </div>
+          )}
+          <label className="rename-modal__label">
+            Tên mới
+            <input
+              className="rename-modal__input"
+              value={renameMeetingValue}
+              onChange={(e) => setRenameMeetingValue(e.target.value)}
+              placeholder="Nhập tên mới..."
+            />
+          </label>
+          <div className="rename-modal__actions">
+            <button className="btn btn--secondary" onClick={() => setRenameMeetingModal(null)} disabled={isRenamingMeeting}>
+              Hủy
+            </button>
+            <button className="btn btn--primary" onClick={handleRenameMeetingSubmit} disabled={isRenamingMeeting || !renameMeetingValue.trim()}>
+              {isRenamingMeeting ? 'Đang lưu...' : 'Lưu'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
       <UploadDocumentModal
         isOpen={showUploadModal}
         onClose={() => setShowUploadModal(false)}
@@ -392,5 +554,38 @@ const ProjectDetail = () => {
     </div>
   )
 }
+
+const ProjectMeetingMenu = ({ onRename, onRemove, onClose }: { onRename: () => void; onRemove: () => void; onClose: () => void }) => (
+  <div
+    className="drive-menu"
+    onClick={(e) => {
+      e.preventDefault()
+      e.stopPropagation()
+    }}
+  >
+    <div className="drive-menu__item drive-menu__item--submenu">
+      <span>Share</span>
+      <ChevronRight size={14} />
+      <div className="drive-menu__submenu">
+        <button type="button" className="drive-menu__action" onClick={onClose}>Copy link</button>
+        <button type="button" className="drive-menu__action" onClick={onClose}>Invite people</button>
+      </div>
+    </div>
+    <div className="drive-menu__item drive-menu__item--submenu">
+      <span>Organize</span>
+      <ChevronRight size={14} />
+      <div className="drive-menu__submenu">
+        <button type="button" className="drive-menu__action" onClick={onClose}>Move to…</button>
+        <button type="button" className="drive-menu__action" onClick={onClose}>Add shortcut</button>
+      </div>
+    </div>
+    <button type="button" className="drive-menu__item" onClick={onRename}>
+      Rename
+    </button>
+    <button type="button" className="drive-menu__item drive-menu__item--danger" onClick={onRemove}>
+      Remove
+    </button>
+  </div>
+)
 
 export default ProjectDetail

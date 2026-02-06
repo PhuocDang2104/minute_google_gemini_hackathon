@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   Plus,
-  Users,
+  LayoutGrid,
   Settings,
   Info,
   FolderPlus,
@@ -87,7 +87,7 @@ const Sidebar = () => {
   }
 
   const navItems: NavItem[] = [
-    { path: '/app/meetings', label: 'Các cuộc họp', icon: <Users size={20} /> },
+    { path: '/app/meetings', label: 'Workspace', icon: <LayoutGrid size={20} /> },
   ]
 
   const bottomNavItems: NavItem[] = [

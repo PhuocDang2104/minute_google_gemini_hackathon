@@ -13,9 +13,10 @@ interface UploadDocumentModalProps {
     onSuccess: () => void
     onUploadProgress?: (state: UploadToastState) => void
     projectId?: string
+    meetingId?: string
 }
 
-export const UploadDocumentModal = ({ isOpen, onClose, onSuccess, onUploadProgress, projectId }: UploadDocumentModalProps) => {
+export const UploadDocumentModal = ({ isOpen, onClose, onSuccess, onUploadProgress, projectId, meetingId }: UploadDocumentModalProps) => {
     const [isUploading, setIsUploading] = useState(false)
     const [isDragOver, setIsDragOver] = useState(false)
     const [formData, setFormData] = useState({
@@ -44,6 +45,7 @@ export const UploadDocumentModal = ({ isOpen, onClose, onSuccess, onUploadProgre
                 ...formData,
                 tags: formData.tags,
                 project_id: projectId,
+                meeting_id: meetingId,
             } as any, selectedFile || undefined)
 
             // Reset form
@@ -149,7 +151,9 @@ export const UploadDocumentModal = ({ isOpen, onClose, onSuccess, onUploadProgre
                         <div>
                             <h2 className="upload-modal__title">Upload tài liệu mới</h2>
                             <p className="upload-modal__subtitle">
-                                {projectId ? 'Thêm tài liệu vào dự án' : 'Thêm tài liệu vào Knowledge Hub'}
+                                {meetingId
+                                    ? 'Thêm tài liệu vào phiên'
+                                    : (projectId ? 'Thêm tài liệu vào dự án' : 'Thêm tài liệu vào Knowledge Hub')}
                             </p>
                         </div>
                     </div>

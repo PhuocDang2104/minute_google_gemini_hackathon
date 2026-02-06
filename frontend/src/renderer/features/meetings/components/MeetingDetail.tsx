@@ -5,7 +5,6 @@ import {
   Calendar,
   Clock,
   MapPin,
-  Users,
   AlertCircle,
   RefreshCw,
   Video,
@@ -265,10 +264,6 @@ export const MeetingDetail = () => {
                 </span>
               </>
             )}
-            <span className="meta-item">
-              <Users size={14} />
-              {meeting.participants?.length || 0}
-            </span>
           </div>
 
           <div className="meeting-detail-v2__actions" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -312,7 +307,7 @@ export const MeetingDetail = () => {
                 title="Mở dock để capture audio"
               >
                 <Video size={16} />
-                Tham gia
+                Live Record
               </button>
             </div>
           </div>

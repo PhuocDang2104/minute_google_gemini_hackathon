@@ -2,7 +2,7 @@
  * Post-Meeting Tab - Fireflies.ai Style
  * 3-column layout: Filters | AI Summary | Transcript
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   ChevronDown,
   ChevronRight,
@@ -35,6 +35,7 @@ import { transcriptsApi } from '../../../../lib/api/transcripts';
 import { itemsApi, type ActionItem, type DecisionItem, type RiskItem } from '../../../../lib/api/items';
 import { meetingsApi } from '../../../../lib/api/meetings';
 import { minutesTemplateApi, type MinutesTemplate } from '../../../../lib/api/minutes_template';
+import { UploadDocumentModal } from '../../../../components/UploadDocumentModal';
 
 interface PostMeetTabFirefliesProps {
   meeting: MeetingWithParticipants;
@@ -119,12 +120,11 @@ export const PostMeetTabFireflies = ({ meeting, onRefresh }: PostMeetTabFireflie
   const [isGenerating, setIsGenerating] = useState(false);
   const [isUploadingVideo, setIsUploadingVideo] = useState(false);
   const [isProcessingVideo, setIsProcessingVideo] = useState(false);
-  const handleAddToJira = () => {
-    alert('Đã gửi yêu cầu thêm vào Jira (demo).');
-  };
 
   const [templates, setTemplates] = useState<MinutesTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+
+  const layoutRef = useRef<HTMLDivElement>(null);
   const [defaultTemplate, setDefaultTemplate] = useState<MinutesTemplate | null>(null);
   const [templatesLoading, setTemplatesLoading] = useState(true);
 
@@ -138,8 +138,6 @@ export const PostMeetTabFireflies = ({ meeting, onRefresh }: PostMeetTabFireflie
     topics: [],
     searchQuery: '',
   });
-
-  const [speakerStats, setSpeakerStats] = useState<SpeakerStats[]>([]);
 
   useEffect(() => {
     loadAllData();
@@ -203,43 +201,11 @@ export const PostMeetTabFireflies = ({ meeting, onRefresh }: PostMeetTabFireflie
       setDecisions(decisionsData.items || []);
       setRisks(risksData.items || []);
 
-      // Calculate speaker stats
-      if (transcriptData.chunks && transcriptData.chunks.length > 0) {
-        calculateSpeakerStats(transcriptData.chunks);
-      }
     } catch (err) {
       console.error('Load data failed:', err);
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const calculateSpeakerStats = (chunks: TranscriptChunk[]) => {
-    const stats = new Map<string, { words: number; time: number }>();
-
-    chunks.forEach((chunk) => {
-      const speaker = chunk.speaker || 'Unknown';
-      const words = chunk.text.split(/\s+/).length;
-      const duration = chunk.end_time - chunk.start_time;
-
-      const current = stats.get(speaker) || { words: 0, time: 0 };
-      stats.set(speaker, {
-        words: current.words + words,
-        time: current.time + duration,
-      });
-    });
-
-    const totalTime = Array.from(stats.values()).reduce((sum, s) => sum + s.time, 0);
-
-    const speakerList: SpeakerStats[] = Array.from(stats.entries()).map(([speaker, data]) => ({
-      speaker,
-      word_count: data.words,
-      talk_time: data.time,
-      percentage: totalTime > 0 ? (data.time / totalTime) * 100 : 0,
-    }));
-
-    speakerList.sort((a, b) => b.talk_time - a.talk_time);
-    setSpeakerStats(speakerList);
   };
 
   const handleGenerate = async () => {
@@ -308,6 +274,46 @@ export const PostMeetTabFireflies = ({ meeting, onRefresh }: PostMeetTabFireflie
     }
   };
 
+  const isEmptySession =
+    !meeting.recording_url &&
+    !minutes &&
+    transcripts.length === 0 &&
+    actionItems.length === 0 &&
+    decisions.length === 0 &&
+    risks.length === 0;
+
+  useLayoutEffect(() => {
+    const layoutEl = layoutRef.current;
+    if (!layoutEl) return;
+
+    const target = layoutEl.querySelector<HTMLElement>('.fireflies-center-panel');
+    if (!target) return;
+
+    const updateHeight = () => {
+      const rect = target.getBoundingClientRect();
+      if (rect.height > 0) {
+        layoutEl.style.setProperty('--fireflies-panel-height', `${Math.round(rect.height)}px`);
+      }
+    };
+
+    updateHeight();
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(target);
+    window.addEventListener('resize', updateHeight);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateHeight);
+    };
+  }, [
+    isEmptySession,
+    minutes?.id,
+    transcripts.length,
+    actionItems.length,
+    decisions.length,
+    risks.length,
+  ]);
+
   if (isLoading) {
     return (
       <div className="fireflies-layout">
@@ -319,25 +325,19 @@ export const PostMeetTabFireflies = ({ meeting, onRefresh }: PostMeetTabFireflie
     );
   }
 
-  const isEmptySession =
-    !meeting.recording_url &&
-    !minutes &&
-    transcripts.length === 0 &&
-    actionItems.length === 0 &&
-    decisions.length === 0 &&
-    risks.length === 0;
-
   return (
-    <div className={`fireflies-layout ${isEmptySession ? 'fireflies-layout--empty' : ''}`}>
+    <div
+      className={`fireflies-layout ${isEmptySession ? 'fireflies-layout--empty' : ''}`}
+      ref={layoutRef}
+    >
       {/* Left Sidebar - Filters & Analytics */}
       {!isEmptySession && (
         <LeftPanel
+          meetingId={meeting.id}
           filters={filters}
           setFilters={setFilters}
           actionItems={actionItems}
-          speakerStats={speakerStats}
           transcripts={transcripts}
-          onAddToJira={handleAddToJira}
         />
       )}
 
@@ -381,21 +381,19 @@ export const PostMeetTabFireflies = ({ meeting, onRefresh }: PostMeetTabFireflie
 
 // ==================== Left Panel - Filters ====================
 interface LeftPanelProps {
+  meetingId: string;
   filters: FilterState;
   setFilters: (filters: FilterState) => void;
   actionItems: ActionItem[];
-  speakerStats: SpeakerStats[];
   transcripts: TranscriptChunk[];
-  onAddToJira: () => void;
 }
 
-const LeftPanel = ({ filters, setFilters, actionItems, speakerStats, transcripts, onAddToJira }: LeftPanelProps) => {
+const LeftPanel = ({ meetingId, filters, setFilters, actionItems, transcripts }: LeftPanelProps) => {
   const [expandedSections, setExpandedSections] = useState({
     filters: true,
-    sentiment: true,
-    speakers: true,
     topics: true,
   });
+  const [showUploadModal, setShowUploadModal] = useState(false);
 
   const toggleSection = (section: keyof typeof expandedSections) => {
     setExpandedSections({ ...expandedSections, [section]: !expandedSections[section] });
@@ -416,6 +414,21 @@ const LeftPanel = ({ filters, setFilters, actionItems, speakerStats, transcripts
 
   return (
     <div className="fireflies-left-panel">
+      <div className="fireflies-upload-card">
+        <div className="fireflies-upload-card__content">
+          <div className="fireflies-upload-card__icon">
+            <Upload size={18} />
+          </div>
+          <div>
+            <div className="fireflies-upload-card__title">Tài liệu phiên</div>
+            <div className="fireflies-upload-card__subtitle">Upload những tài liệu liên quan đến session này.</div>
+          </div>
+        </div>
+        <button className="btn btn--secondary btn--sm" onClick={() => setShowUploadModal(true)}>
+          Tải tài liệu
+        </button>
+      </div>
+
       {/* Search */}
       <div className="fireflies-search">
         <div className="fireflies-search__icon">
@@ -428,14 +441,6 @@ const LeftPanel = ({ filters, setFilters, actionItems, speakerStats, transcripts
           onChange={(e) => setFilters({ ...filters, searchQuery: e.target.value })}
         />
       </div>
-
-      <button
-        className="btn btn--accent"
-        style={{ width: '100%', marginBottom: 'var(--space-md)' }}
-        onClick={onAddToJira}
-      >
-        Thêm vào Jira
-      </button>
 
       {/* AI Filters Section */}
       <FilterSection
@@ -477,30 +482,6 @@ const LeftPanel = ({ filters, setFilters, actionItems, speakerStats, transcripts
         />
       </FilterSection>
 
-      {/* Sentiment Section */}
-      <FilterSection
-        title="SENTIMENT FILTERS"
-        isExpanded={expandedSections.sentiment}
-        onToggle={() => toggleSection('sentiment')}
-      >
-        <SentimentBar sentiment="positive" percentage={43} />
-        <SentimentBar sentiment="neutral" percentage={53} />
-        <SentimentBar sentiment="negative" percentage={4} />
-      </FilterSection>
-
-      {/* Speakers Section */}
-      <FilterSection
-        title="SPEAKERS"
-        isExpanded={expandedSections.speakers}
-        onToggle={() => toggleSection('speakers')}
-      >
-        <div className="speakers-list">
-          {speakerStats.map((stat) => (
-            <SpeakerCard key={stat.speaker} stat={stat} />
-          ))}
-        </div>
-      </FilterSection>
-
       {/* Topic Trackers Section */}
       <FilterSection
         title="TOPIC TRACKERS"
@@ -511,6 +492,13 @@ const LeftPanel = ({ filters, setFilters, actionItems, speakerStats, transcripts
         <TopicChip label="Marketing Team" count={5} />
         <TopicChip label="Product" count={3} />
       </FilterSection>
+
+      <UploadDocumentModal
+        isOpen={showUploadModal}
+        onClose={() => setShowUploadModal(false)}
+        onSuccess={() => setShowUploadModal(false)}
+        meetingId={meetingId}
+      />
     </div>
   );
 };
