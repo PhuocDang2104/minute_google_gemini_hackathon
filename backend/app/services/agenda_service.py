@@ -9,8 +9,6 @@ import json
 import re
 
 from sqlalchemy.orm import Session
-from groq import Groq
-
 from app.schemas.agenda import (
     AgendaItem,
     AgendaItemCreate,
@@ -20,18 +18,14 @@ from app.schemas.agenda import (
     AgendaGenerateResponse,
     AgendaSaveRequest,
 )
-from app.core.config import get_settings
+from app.llm.gemini_client import GeminiChat, is_gemini_available
 
 logger = logging.getLogger(__name__)
 
 # In-memory storage for mock agendas
 _mock_agendas: dict[str, AgendaItem] = {}
 
-# Get settings
-settings = get_settings()
 
-# Groq availability
-GROQ_AVAILABLE = bool(getattr(settings, "groq_api_key", ""))
 
 
 def _init_mock_agendas():
@@ -257,19 +251,23 @@ async def generate_agenda_ai(
     db: Session,
     request: AgendaGenerateRequest,
 ) -> AgendaGenerateResponse:
-    """Generate agenda using Groq LLM"""
-    
-    if not GROQ_AVAILABLE:
-        logger.warning("Groq not available, returning mock agenda")
-        return _generate_mock_agenda(request)
-    
-    try:
-        client = Groq(api_key=settings.groq_api_key)
-        
-        # Build prompt
-        prompt = f"""Bạn là AI assistant chuyên tạo agenda cho cuộc họp doanh nghiệp.
+    """Generate agenda using Gemini-first LLM."""
 
-Tạo agenda chi tiết cho cuộc họp với thông tin sau:
+    if not is_gemini_available():
+        logger.warning("LLM not available, returning mock agenda")
+        return _generate_mock_agenda(request)
+
+    try:
+        chat = GeminiChat(
+            system_prompt=(
+                "Bạn là MINUTE Agenda Builder cho cuộc họp doanh nghiệp. "
+                "Trả lời tiếng Việt, ngắn gọn, không markdown. "
+                "Chỉ dùng thông tin đã cho; nếu thiếu thì dùng 'TBD'."
+            )
+        )
+
+        # Build prompt
+        prompt = f"""Tạo agenda chi tiết cho cuộc họp với thông tin sau:
 - Tiêu đề: {request.meeting_title}
 - Loại cuộc họp: {request.meeting_type or 'general'}
 - Mô tả: {request.meeting_description or 'Không có mô tả'}
@@ -278,10 +276,10 @@ Tạo agenda chi tiết cho cuộc họp với thông tin sau:
 {f'- Context bổ sung: {request.context}' if request.context else ''}
 
 Yêu cầu:
-1. Tạo agenda với các mục rõ ràng, phù hợp với loại cuộc họp
-2. Phân bổ thời gian hợp lý cho từng mục
-3. Đề xuất người trình bày nếu phù hợp
-4. Tổng thời lượng không vượt quá {request.duration_minutes or 60} phút
+1) Tạo agenda với các mục rõ ràng, phù hợp với loại cuộc họp.
+2) Phân bổ thời gian hợp lý cho từng mục.
+3) Đề xuất người trình bày nếu phù hợp (nếu không rõ, đặt "TBD").
+4) Tổng thời lượng không vượt quá {request.duration_minutes or 60} phút.
 
 Trả về JSON theo format:
 {{
@@ -299,16 +297,7 @@ Trả về JSON theo format:
 
 Chỉ trả về JSON, không có text khác."""
 
-        resp = client.chat.completions.create(
-            model=settings.groq_model,
-            messages=[
-                {"role": "system", "content": "Bạn là trợ lý PMO, trả lời tiếng Việt, không markdown."},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=settings.ai_temperature,
-            max_tokens=settings.ai_max_tokens,
-        )
-        response_text = resp.choices[0].message.content.strip()
+        response_text = (await chat.chat(prompt)).strip()
         
         # Clean up response - remove markdown code blocks if present
         if response_text.startswith("```"):
@@ -348,7 +337,7 @@ Chỉ trả về JSON, không có text khác."""
         )
         
     except Exception as e:
-        logger.error(f"Groq error: {e}")
+        logger.error(f"LLM error: {e}")
         return _generate_mock_agenda(request)
 
 

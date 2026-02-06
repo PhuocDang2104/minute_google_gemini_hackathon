@@ -903,7 +903,7 @@ async def query_knowledge_ai(
     db: Session,
     request: KnowledgeQueryRequest,
 ) -> KnowledgeQueryResponse:
-    """RAG query using pgvector + Groq"""
+    """RAG query using pgvector + LLM"""
     # Smalltalk/noise handling
     if _is_smalltalk_or_noise(request.query):
         answer = "Xin chào! Bạn muốn hỏi gì về tài liệu/policy? Hãy mô tả rõ hơn nhé."
@@ -1000,13 +1000,13 @@ async def query_knowledge_ai(
 
     # If no context at all, avoid repeating 'Không đủ dữ liệu', give gentle ask for clarification
     if not context_parts:
-        # Try giving a gentle, generic answer using Groq (no RAG context)
+        # Try giving a gentle, generic answer using LLM (no RAG context)
         if is_gemini_available():
             try:
                 chat = GeminiChat(
                     system_prompt=(
-                        "Bạn là trợ lý thân thiện. Trả lời ngắn gọn, tiếng Việt. "
-                        "Không bịa quá đà; nếu không chắc, hãy nói rõ."
+                        "Bạn là MINUTE Knowledge Assistant. Trả lời ngắn gọn, tiếng Việt. "
+                        "Không bịa; nếu thiếu dữ liệu, nói rõ và gợi ý người dùng cung cấp thêm."
                     )
                 )
                 prompt = f"""Câu hỏi: {request.query}
@@ -1022,7 +1022,7 @@ Hãy:
                     citations=[],
                 )
             except Exception as exc:
-                logger.error("Groq generic fallback failed: %s", exc)
+                logger.error("LLM generic fallback failed: %s", exc)
         return KnowledgeQueryResponse(
             answer="Mình chưa thấy tài liệu liên quan. Bạn mô tả rõ hơn chủ đề/tên tài liệu nhé? Nếu cần, mình có thể gợi ý chung.",
             relevant_documents=[],
@@ -1030,12 +1030,12 @@ Hãy:
             citations=[],
         )
 
-    # Call Groq LLM
+    # Call LLM
     if is_gemini_available():
         try:
             chat = GeminiChat(
                 system_prompt=(
-                    "Bạn là trợ lý RAG. Trả lời ngắn gọn bằng tiếng Việt. "
+                    "Bạn là MINUTE RAG Assistant. Trả lời ngắn gọn bằng tiếng Việt. "
                     "Chỉ dùng thông tin trong Context. Nếu thiếu thông tin, nói rõ."
                 )
             )
@@ -1059,7 +1059,7 @@ Yêu cầu:
                 citations=citations,
             )
         except Exception as exc:
-            logger.error("Groq query failed: %s", exc)
+            logger.error("LLM query failed: %s", exc)
 
     # Fallback response
     if relevant_docs:

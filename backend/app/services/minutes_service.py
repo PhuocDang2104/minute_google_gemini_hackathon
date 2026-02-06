@@ -3,6 +3,8 @@ Meeting Minutes Service
 """
 from datetime import datetime
 import logging
+import math
+from typing import Iterable
 from typing import List, Optional, Tuple, Dict, Any
 from uuid import uuid4
 from sqlalchemy.orm import Session
@@ -21,6 +23,66 @@ from pathlib import Path
 from datetime import timezone
 
 logger = logging.getLogger(__name__)
+
+
+# Transcript windowing settings (character-based)
+MAX_DIRECT_TRANSCRIPT_CHARS = 15000
+WINDOW_CHAR_SIZE = 8000
+WINDOW_CHAR_OVERLAP = 200
+MAX_WINDOWS = 12
+
+
+def _chunk_text(text: str, max_chars: int, overlap: int) -> Iterable[str]:
+    """Chunk text into overlapping windows by character count."""
+    if not text:
+        return []
+    if max_chars <= 0:
+        return [text]
+    overlap = max(0, min(overlap, max_chars - 1))
+    chunks = []
+    start = 0
+    n = len(text)
+    while start < n:
+        end = min(n, start + max_chars)
+        chunk = text[start:end].strip()
+        if chunk:
+            chunks.append(chunk)
+        if end >= n:
+            break
+        start = max(0, end - overlap)
+    return chunks
+
+
+async def _summarize_transcript_windows(
+    assistant: "MeetingAIAssistant",
+    transcript: str,
+) -> List[str]:
+    """Summarize transcript by windows, then return list of summaries."""
+    if not transcript:
+        return []
+
+    window_size = WINDOW_CHAR_SIZE
+    if len(transcript) > WINDOW_CHAR_SIZE * MAX_WINDOWS:
+        window_size = math.ceil(len(transcript) / MAX_WINDOWS)
+
+    chunks = list(_chunk_text(transcript, window_size, WINDOW_CHAR_OVERLAP))
+    summaries: List[str] = []
+    for idx, chunk in enumerate(chunks, start=1):
+        prompt = (
+            "Tóm tắt ngắn gọn đoạn transcript sau (3-5 gạch đầu dòng). "
+            "Giữ nguyên nội dung, không bịa. "
+            "Nếu có thời điểm/nhân vật quan trọng hoặc action/decision/risk thì nêu rõ.\n\n"
+            f"ĐOẠN {idx}/{len(chunks)}:\n{chunk}"
+        )
+        try:
+            summary = await assistant.chat.chat(prompt)
+        except Exception as exc:
+            logger.warning("Failed to summarize transcript window %s: %s", idx, exc)
+            summary = ""
+        summary = (summary or "").strip()
+        if summary:
+            summaries.append(summary)
+    return summaries
 
 
 def _hydrate_minutes_html(minutes: MeetingMinutesResponse) -> MeetingMinutesResponse:
@@ -409,6 +471,7 @@ async def generate_minutes_with_ai(
             transcript = transcript_service.get_full_transcript(db, meeting_id)
         except Exception as exc:
             logger.warning("Failed to fetch transcript for meeting %s: %s", meeting_id, exc)
+            db.rollback()
             transcript = ""
     
     # Get action items
@@ -419,6 +482,7 @@ async def generate_minutes_with_ai(
             actions = [item.description for item in action_list.items]
         except Exception as exc:
             logger.warning("Failed to fetch action items for meeting %s: %s", meeting_id, exc)
+            db.rollback()
             actions = []
     
     # Get decisions
@@ -429,6 +493,7 @@ async def generate_minutes_with_ai(
             decisions = [item.description for item in decision_list.items]
         except Exception as exc:
             logger.warning("Failed to fetch decisions for meeting %s: %s", meeting_id, exc)
+            db.rollback()
             decisions = []
     
     # Get risks
@@ -439,6 +504,7 @@ async def generate_minutes_with_ai(
             risks = [f"{item.description} (Severity: {item.severity})" for item in risk_list.items]
         except Exception as exc:
             logger.warning("Failed to fetch risks for meeting %s: %s", meeting_id, exc)
+            db.rollback()
             risks = []
     
     # Get related documents (titles/descriptions) linked to meeting
@@ -459,6 +525,7 @@ async def generate_minutes_with_ai(
         related_docs = [f"{r[0]} ({r[2]}) - {r[1] or ''}".strip() for r in doc_rows]
     except Exception as exc:
         logger.warning("Failed to fetch related documents for meeting %s: %s", meeting_id, exc)
+        db.rollback()
         related_docs = []
 
     # Build context payload for LLM
@@ -482,6 +549,22 @@ async def generate_minutes_with_ai(
         'type': meeting_type,
         'description': meeting_desc
     })
+
+    # Windowed transcript summarization for long meetings
+    transcript_for_llm = transcript or ""
+    if transcript_for_llm and len(transcript_for_llm) > MAX_DIRECT_TRANSCRIPT_CHARS:
+        window_summaries = await _summarize_transcript_windows(assistant, transcript_for_llm)
+        if window_summaries:
+            transcript_for_llm = "\n\n".join(
+                [f"[Tóm tắt đoạn {i+1}] {s}" for i, s in enumerate(window_summaries)]
+            )
+        else:
+            # fallback to truncated transcript if windowing fails
+            transcript_for_llm = transcript_for_llm[:MAX_DIRECT_TRANSCRIPT_CHARS]
+    elif transcript_for_llm:
+        transcript_for_llm = transcript_for_llm[:MAX_DIRECT_TRANSCRIPT_CHARS]
+
+    context_payload["transcript"] = transcript_for_llm
 
     # STUDY MODE DETECTION
     is_study_session = meeting_type and meeting_type.lower() in ['study', 'training', 'education', 'learning', 'workshop']

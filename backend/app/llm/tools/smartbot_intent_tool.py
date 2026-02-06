@@ -3,7 +3,7 @@ import re
 from typing import Any, Dict, Optional, Tuple
 
 from app.core.config import get_settings
-from app.llm.gemini_client import get_groq_client
+from app.llm.gemini_client import call_llm_sync, is_gemini_available
 from app.llm.prompts.in_meeting_prompts import INTENT_PROMPT
 
 
@@ -33,19 +33,16 @@ def _parse_intent_payload(text: str) -> Optional[Dict[str, Any]]:
 
 
 def _llm_intent(text: str, lang: str | None) -> Optional[Tuple[str, Dict[str, Any]]]:
-    client = get_groq_client()
-    if not client:
+    if not is_gemini_available():
         return None
     prompt = INTENT_PROMPT + f"\n\nLanguage: {lang or 'vi'}\nText:\n{text.strip()}"
     try:
         settings = get_settings()
-        resp = client.chat.completions.create(
-            model=settings.groq_model,
-            messages=[{"role": "user", "content": prompt}],
+        content = call_llm_sync(
+            prompt,
             temperature=0.1,
             max_tokens=min(settings.ai_max_tokens, 128),
         )
-        content = resp.choices[0].message.content or ""
         payload = _parse_intent_payload(content)
         if not isinstance(payload, dict):
             return None
@@ -74,7 +71,7 @@ def _heuristic_intent(text: str) -> Tuple[str, Dict[str, Any]]:
 
 
 def predict_intent(text: str, lang: str | None = "vi") -> Tuple[str, Dict[str, Any]]:
-    """Fast intent detection via Groq LLM; fallback to heuristics."""
+    """Fast intent detection via LLM; fallback to heuristics."""
     body = (text or "").strip()
     if not body:
         return "NO_INTENT", {}

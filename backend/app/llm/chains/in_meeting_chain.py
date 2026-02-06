@@ -7,30 +7,26 @@ from app.llm.prompts.in_meeting_prompts import (
     TOPIC_SEGMENT_PROMPT,
     RECAP_TOPIC_INTENT_PROMPT,
 )
-from app.llm.gemini_client import GeminiChat, get_groq_client
+from app.llm.gemini_client import call_llm_sync
 from app.core.config import get_settings
 
 
 def _call_gemini(prompt: str) -> str:
-    client = get_groq_client()
-    if not client:
-        return ""
+    """Low-latency LLM call (Gemini-first, Groq fallback)."""
     try:
         settings = get_settings()
-        resp = client.chat.completions.create(
-            model=settings.groq_model,
-            messages=[{"role": "user", "content": prompt}],
+        return call_llm_sync(
+            prompt,
             temperature=settings.ai_temperature,
             max_tokens=min(settings.ai_max_tokens, 512),
         )
-        return resp.choices[0].message.content or ""
     except Exception as e:
-        print(f"[Groq] error in _call_gemini: {e}")
+        print(f"[LLM] error in _call_gemini: {e}")
         return ""
 
 
 def summarize_transcript(transcript_window: str, topic: str | None, intent: str | None) -> str:
-    """Use Gemini if available; fallback to stub."""
+    """Use LLM if available; fallback to stub."""
     body = (transcript_window or "").strip()
     prompt = RECW_PROMPT + f"\n\nTranscript window:\n{body}\n\nTopic: {topic or 'N/A'}\nIntent: {intent or 'N/A'}"
     summary = _call_gemini(prompt)

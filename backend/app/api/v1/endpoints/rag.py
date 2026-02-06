@@ -17,9 +17,9 @@ from app.llm.gemini_client import GeminiChat, is_gemini_available
 router = APIRouter()
 
 
-# Knowledge base context (would come from vector DB in production)
+# Knowledge base context (demo; production would come from vector DB)
 KNOWLEDGE_BASE = """
-# LPBank Internal Knowledge Base
+# MINUTE Demo Knowledge Base
 
 ## Thông tư NHNN
 ### Thông tư 09/2020/TT-NHNN - Quản lý rủi ro CNTT
@@ -62,12 +62,12 @@ class RAGAssistant:
         self.chat = GeminiChat(system_prompt=self._build_system_prompt())
     
     def _build_system_prompt(self) -> str:
-        return f"""Bạn là MeetMate AI - trợ lý thông minh cho PMO của LPBank.
+        return f"""Bạn là MINUTE AI Assistant.
 
 QUAN TRỌNG: Khi trả lời, bạn PHẢI:
 1. Dựa trên knowledge base được cung cấp
 2. Trích dẫn nguồn cụ thể (tên tài liệu, điều khoản)
-3. Nếu không có thông tin trong knowledge base, nói rõ "Tôi không tìm thấy thông tin này trong hệ thống"
+3. Nếu không có thông tin trong knowledge base, nói rõ "Không tìm thấy thông tin trong hệ thống MINUTE"
 4. KHÔNG sử dụng markdown (không dùng **, ##, hay bất kỳ ký tự markdown nào)
 5. KHÔNG chào hỏi mỗi lần trả lời (chỉ trả lời trực tiếp câu hỏi)
 6. Trả lời bằng văn bản thuần túy, ngắn gọn, súc tích
@@ -212,6 +212,7 @@ async def query_rag(
             })
             db.commit()
         except Exception as e:
+            db.rollback()
             print(f"Failed to save RAG query: {e}")
     
     return RAGResponse(
@@ -239,8 +240,13 @@ def get_rag_history(
         LIMIT 20
     """)
     
-    result = db.execute(query, {'meeting_id': meeting_id})
-    rows = result.fetchall()
+    try:
+        result = db.execute(query, {'meeting_id': meeting_id})
+        rows = result.fetchall()
+    except Exception as e:
+        db.rollback()
+        print(f"Failed to load RAG history: {e}")
+        return RAGHistory(queries=[], total=0)
     
     queries = []
     for row in rows:

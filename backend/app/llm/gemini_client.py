@@ -1,17 +1,46 @@
+import asyncio
 import json
 from typing import Optional, List, Dict, Any
-import google.generativeai as genai
+
 from groq import Groq
 from app.core.config import get_settings
 
 settings = get_settings()
 
-def configure_genai():
-    """Configure Google Generative AI if key is present"""
-    if settings.gemini_api_key:
-        genai.configure(api_key=settings.gemini_api_key)
+try:
+    # New Gemini SDK (google-genai)
+    from google import genai as genai_client  # type: ignore
+    from google.genai import types as genai_types  # type: ignore
+    _GENAI_SDK = "google-genai"
+except Exception:
+    genai_client = None
+    genai_types = None
+    _GENAI_SDK = None
+
+try:
+    # Legacy Gemini SDK (google-generativeai)
+    import google.generativeai as genai_legacy  # type: ignore
+    _LEGACY_GENAI = True
+except Exception:
+    genai_legacy = None
+    _LEGACY_GENAI = False
+
+
+def _gemini_sdk_name() -> str:
+    if _GENAI_SDK and genai_client:
+        return "google-genai"
+    if _LEGACY_GENAI and genai_legacy:
+        return "google-generativeai"
+    return "none"
+
+
+def configure_genai() -> bool:
+    """Configure legacy Google Generative AI if key is present."""
+    if settings.gemini_api_key and genai_legacy:
+        genai_legacy.configure(api_key=settings.gemini_api_key)
         return True
     return False
+
 
 def get_groq_client():
     """Return Groq client."""
@@ -19,53 +48,206 @@ def get_groq_client():
         return None
     return Groq(api_key=settings.groq_api_key)
 
-def is_gemini_available() -> bool:
-    """Check if either Google Gemini or Groq is configured."""
-    # Check Google Gemini
-    if settings.gemini_api_key:
-        return True
-    
-    # Check Groq
+
+def _select_provider() -> str:
+    if settings.gemini_api_key and (genai_client or genai_legacy):
+        return "gemini"
     if settings.groq_api_key:
+        return "groq"
+    return "mock"
+
+
+def is_gemini_available() -> bool:
+    """Check if Gemini or Groq is configured and usable."""
+    provider = _select_provider()
+    if provider != "mock":
         return True
-        
     print("[AI] No AI API key configured (Gemini or Groq)")
     return False
+
+
+def get_llm_status() -> Dict[str, Any]:
+    """Return provider + model metadata for UI/health checks."""
+    provider = _select_provider()
+    if provider == "gemini":
+        model = settings.gemini_model
+        api_key_set = bool(settings.gemini_api_key and len(settings.gemini_api_key) > 10)
+        api_key_preview = (settings.gemini_api_key[:8] + "...") if settings.gemini_api_key else None
+    elif provider == "groq":
+        model = settings.groq_model
+        api_key_set = bool(settings.groq_api_key and len(settings.groq_api_key) > 10)
+        api_key_preview = (settings.groq_api_key[:8] + "...") if settings.groq_api_key else None
+    else:
+        model = None
+        api_key_set = False
+        api_key_preview = None
+    return {
+        "provider": provider,
+        "status": "ready" if provider != "mock" else "mock_mode",
+        "model": model,
+        "api_key_set": api_key_set,
+        "api_key_preview": api_key_preview,
+        "sdk": _gemini_sdk_name(),
+    }
+
+
+def _gemini_generate(
+    prompt: str,
+    *,
+    system_prompt: Optional[str],
+    model_name: str,
+    temperature: float,
+    max_tokens: int,
+) -> str:
+    if not settings.gemini_api_key:
+        return ""
+    try:
+        if genai_client and genai_types:
+            client = genai_client.Client(api_key=settings.gemini_api_key)
+            try:
+                config = genai_types.GenerateContentConfig(
+                    temperature=temperature,
+                    max_output_tokens=max_tokens,
+                    system_instruction=system_prompt or None,
+                )
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=config,
+                )
+                return (getattr(response, "text", None) or "").strip()
+            except Exception:
+                # Fallback: inline system prompt if SDK config signature differs
+                merged_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=merged_prompt,
+                )
+                return (getattr(response, "text", None) or "").strip()
+        if genai_legacy:
+            genai_legacy.configure(api_key=settings.gemini_api_key)
+            model = genai_legacy.GenerativeModel(
+                model_name=model_name,
+                system_instruction=system_prompt or None,
+            )
+            response = model.generate_content(
+                prompt,
+                generation_config=genai_legacy.types.GenerationConfig(
+                    temperature=temperature,
+                    max_output_tokens=max_tokens,
+                ),
+            )
+            return (response.text or "").strip()
+    except Exception as exc:
+        print(f"[gemini] generate error: {exc}")
+    return ""
+
+
+def _groq_generate(
+    prompt: str,
+    *,
+    system_prompt: Optional[str],
+    model_name: str,
+    temperature: float,
+    max_tokens: int,
+) -> str:
+    client = get_groq_client()
+    if not client:
+        return ""
+    try:
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+        resp = client.chat.completions.create(
+            model=model_name,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        return (resp.choices[0].message.content or "").strip()
+    except Exception as exc:
+        print(f"[groq] generate error: {exc}")
+    return ""
+
+
+def _groq_chat(
+    messages: List[Dict[str, str]],
+    *,
+    model_name: str,
+    temperature: float,
+    max_tokens: int,
+) -> str:
+    client = get_groq_client()
+    if not client:
+        return ""
+    resp = client.chat.completions.create(
+        model=model_name,
+        messages=messages,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+    return (resp.choices[0].message.content or "").strip()
+
+
+def call_llm_sync(
+    prompt: str,
+    *,
+    system_prompt: Optional[str] = None,
+    model_name: Optional[str] = None,
+    temperature: Optional[float] = None,
+    max_tokens: Optional[int] = None,
+) -> str:
+    """Sync LLM call used by low-latency / sync code paths."""
+    provider = _select_provider()
+    temperature = settings.ai_temperature if temperature is None else temperature
+    max_tokens = settings.ai_max_tokens if max_tokens is None else max_tokens
+    if provider == "gemini":
+        return _gemini_generate(
+            prompt,
+            system_prompt=system_prompt,
+            model_name=model_name or settings.gemini_model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+    if provider == "groq":
+        return _groq_generate(
+            prompt,
+            system_prompt=system_prompt,
+            model_name=model_name or settings.groq_model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+    return ""
 
 class GeminiChat:
     """Chat wrapper supporting Google Gemini and Groq."""
     
     def __init__(self, system_prompt: Optional[str] = None, mock_response: Optional[str] = None):
         self.system_prompt = system_prompt or self._default_system_prompt()
-        self.mock_response = mock_response or "AI đang ở chế độ mock, chưa cấu hình API Key."
+        self.mock_response = mock_response or "AI đang ở chế độ mock (chưa cấu hình API Key)."
         self.history: List[Dict[str, str]] = []
         
         # Determine provider
-        self.provider = "mock"
-        if settings.gemini_api_key:
-            self.provider = "gemini"
-            configure_genai()
-            self.model_name = settings.gemini_model or "gemini-1.5-flash"
-            self.model = genai.GenerativeModel(
-                model_name=self.model_name,
-                system_instruction=self.system_prompt
-            )
-        elif settings.groq_api_key:
-            self.provider = "groq"
-            self.client = get_groq_client()
+        self.provider = _select_provider()
+        self.model_name = settings.gemini_model if self.provider == "gemini" else settings.groq_model
     
     def _default_system_prompt(self) -> str:
-        return """Bạn là MeetMate AI Assistant - trợ lý thông minh cho PMO (Project Management Office).
+        return """Bạn là MINUTE AI Assistant — trợ lý thông minh cho meetings & study sessions.
 
-Nhiệm vụ của bạn:
-1. Hỗ trợ chuẩn bị cuộc họp (Pre-meeting): Gợi ý agenda, tài liệu
-2. Hỗ trợ trong cuộc họp (In-meeting): Ghi chép, phát hiện action items
-3. Hỗ trợ sau cuộc họp (Post-meeting): Tạo biên bản, theo dõi tasks
-4. Hỗ trợ học tập (Study Mode): Trích xuất khái niệm, tạo quiz
+Sứ mệnh:
+1) Pre-meeting: gợi ý agenda, pre-read, tài liệu liên quan.
+2) In-meeting: recap theo mốc thời gian, nhận diện action/decision/risk.
+3) Post-meeting: tạo biên bản, summary, notes, next steps.
+4) Study mode: trích xuất khái niệm, ví dụ, tạo quiz ôn tập.
+5) Q&A: trả lời theo ngữ cảnh dựa trên transcript/summary/tài liệu.
+6) Multimodal: nếu có "visual_context"/ghi chú khung hình, hãy dùng để giải thích đúng ngữ cảnh.
 
-Nguyên tắc:
-- Trả lời tiếng Việt, ngắn gọn.
-- Nếu không chắc chắn, nói rõ "Tôi không có thông tin".
+Nguyên tắc bắt buộc:
+- Chỉ dùng dữ liệu được cung cấp (context/transcript/doc). Nếu thiếu dữ liệu, nói rõ “Chưa đủ thông tin”.
+- Không bịa, không suy đoán ngoài ngữ cảnh. Ưu tiên câu trả lời ngắn gọn, rõ ràng.
+- Nếu cần xác nhận hoặc hành động (tool-calling), luôn hỏi lại trước khi thực hiện (human-in-the-loop).
+- Trả lời tiếng Việt, giọng chuyên nghiệp nhưng thân thiện.
 """
 
     async def chat(self, message: str, context: Optional[str] = None) -> str:
@@ -78,23 +260,15 @@ Nguyên tắc:
                 full_prompt = f"Context:\n{context}\n\nUser Question: {message}"
 
             if self.provider == "gemini":
-                # Google Gemini
-                chat = self.model.start_chat(history=[])
-                # Note: Gemini python lib handles history differently, usually you keep the chat object.
-                # For stateless/one-off requests like this wrapper implies, generate_content is easier
-                # but doesn't retain history automatically unless we manage it. 
-                # This wrapper seems designed for one-off or managed history.
-                
-                # Construct history for context if needed, but current usage is mostly single turn with large context
-                response = self.model.generate_content(
+                response_text = await asyncio.to_thread(
+                    _gemini_generate,
                     full_prompt,
-                    generation_config=genai.types.GenerationConfig(
-                        temperature=settings.ai_temperature,
-                        max_output_tokens=settings.ai_max_tokens,
-                    )
+                    system_prompt=self.system_prompt,
+                    model_name=self.model_name or settings.gemini_model,
+                    temperature=settings.ai_temperature,
+                    max_tokens=settings.ai_max_tokens,
                 )
-                return self._clean_markdown(response.text)
-
+                return self._clean_markdown(response_text)
             elif self.provider == "groq":
                 # Groq
                 messages = []
@@ -107,13 +281,13 @@ Nguyên tắc:
                 
                 messages.append({"role": "user", "content": full_prompt})
 
-                resp = self.client.chat.completions.create(
-                    model=settings.groq_model,
-                    messages=messages,
+                assistant_message = await asyncio.to_thread(
+                    _groq_chat,
+                    messages,
+                    model_name=self.model_name or settings.groq_model,
                     temperature=settings.ai_temperature,
                     max_tokens=settings.ai_max_tokens,
                 )
-                assistant_message = resp.choices[0].message.content
                 self.history.append({"user": full_prompt, "assistant": assistant_message})
                 return self._clean_markdown(assistant_message)
                 
@@ -124,7 +298,7 @@ Nguyên tắc:
             return self._mock_response(message)
     
     def _clean_markdown(self, text: str) -> str:
-        return text.strip()
+        return (text or "").strip()
     
     def _mock_response(self, message: str) -> str:
         return self.mock_response
@@ -153,6 +327,12 @@ class MeetingAIAssistant:
         
         if self.meeting_context.get('agenda'):
             ctx_parts.append(f"Agenda: {self.meeting_context['agenda']}")
+
+        if self.meeting_context.get('visual_context'):
+            ctx_parts.append(f"Visual context: {self.meeting_context['visual_context']}")
+
+        if self.meeting_context.get('timeline_highlights'):
+            ctx_parts.append(f"Timeline highlights: {self.meeting_context['timeline_highlights']}")
         
         if self.meeting_context.get('transcript'):
             ctx_parts.append(f"Transcript (trích): {self.meeting_context['transcript'][:15000]}...")
@@ -188,7 +368,8 @@ Format output JSON:
     "owner": "Tên người được giao (nếu có)",
     "deadline": "Deadline (nếu được đề cập)",
     "priority": "high/medium/low",
-    "topic_id": "topic_related"
+    "topic_id": "topic_related",
+    "source_text": "Câu gốc trong transcript nếu có"
   }}
 ]"""
         
@@ -205,7 +386,8 @@ Format output JSON:
   {{
     "description": "Nội dung quyết định",
     "rationale": "Lý do (nếu có)",
-    "confirmed_by": "Người xác nhận"
+    "confirmed_by": "Người xác nhận",
+    "source_text": "Câu gốc trong transcript nếu có"
   }}
 ]"""
         
@@ -222,7 +404,8 @@ Format output JSON:
   {{
     "description": "Mô tả rủi ro",
     "severity": "critical/high/medium/low",
-    "mitigation": "Biện pháp giảm thiểu (nếu có)"
+    "mitigation": "Biện pháp giảm thiểu (nếu có)",
+    "source_text": "Câu gốc trong transcript nếu có"
   }}
 ]"""
         
@@ -276,7 +459,7 @@ Format output JSON:
 
     async def generate_summary_with_context(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """Generate meeting summary with full context and strict guardrails."""
-        prompt = f"""Bạn là trợ lý tạo biên bản cuộc họp.
+        prompt = f"""Bạn là trợ lý MINUTE tạo biên bản cuộc họp/học.
 Hãy tóm tắt dựa trên dữ liệu JSON bên dưới và KHÔNG bịa thông tin.
 
 Quy tắc:
@@ -285,7 +468,8 @@ Quy tắc:
   - Nếu title đủ cụ thể thì cho phép suy đoán 1-2 câu, bắt đầu bằng "Ước đoán: ".
   - Nếu title quá chung chung (vd: "Meeting", "Cuộc họp", "Sync", "Họp nhanh") thì trả về summary rỗng.
 - Nếu có dữ liệu, tóm tắt 2-5 câu, ngắn gọn.
-- key_points: 3-5 gạch đầu dòng rút từ transcript hoặc actions/decisions/risks; nếu không có thì [].
+- key_points: 3-5 gạch đầu dòng rút từ transcript hoặc actions/decisions/risks; nếu có visual_context/timeline_highlights thì ưu tiên.
+- Không dùng markdown.
 
 Dữ liệu:
 {json.dumps(context, ensure_ascii=False)}
@@ -320,7 +504,7 @@ Trả về đúng JSON, không kèm text khác:
     
     async def generate_minutes_json(self, transcript: str) -> Dict[str, Any]:
         """Generate comprehensive minutes in strict JSON format with rich content"""
-        prompt = f"""Bạn là trợ lý chuyên nghiệp tạo biên bản cuộc họp cho doanh nghiệp.
+        prompt = f"""Bạn là trợ lý MINUTE chuyên nghiệp tạo biên bản cuộc họp cho doanh nghiệp.
 Phân tích nội dung cuộc họp (transcript) bên dưới và tạo biên bản chi tiết.
 
 TRANSCRIPT CUỘC HỌP:
@@ -393,6 +577,7 @@ LƯU Ý QUAN TRỌNG:
 - executive_summary phải viết như văn bản chuyên nghiệp, có đầu có đuôi
 - NẾU đây là buổi học/training: hãy điền đầy đủ thông tin vào "study_pack".
 - NẾU đây là cuộc họp dự án/công việc: "study_pack" có thể để rỗng hoặc null.
+- Nếu transcript có dấu hiệu visual context (ví dụ [VISUAL]/[SCREEN]) hãy nhắc trong executive_summary/key_points.
 """
         
         response = await self.chat.chat(prompt)

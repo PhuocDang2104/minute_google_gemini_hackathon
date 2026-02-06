@@ -1,6 +1,6 @@
 """
 AI Chat HTTP Endpoints
-Handles synchronous chat requests with Groq LLM (replaces Gemini)
+Gemini-first with Groq fallback
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -22,153 +22,48 @@ from app.schemas.chat import (
     GenerateSummaryRequest,
     AIGenerationResponse,
 )
-from app.llm.gemini_client import GeminiChat, MeetingAIAssistant, is_gemini_available
+from app.llm.gemini_client import GeminiChat, MeetingAIAssistant, is_gemini_available, get_llm_status
 
 router = APIRouter()
 
-HOME_ASK_CONTEXT = """MeetMate | Tro ly hop thong minh cho "AI-First Workplace" tai LPBank
-(Desktop app + Teams add-in, RAG + LLM + Tool-Calling)
+HOME_ASK_CONTEXT = """MINUTE | Tro ly thong minh cho meetings va study sessions
+(Web app + Multimodal Companion Agent + LightRAG + Tool-calling)
 
-1. Problem Summary - Van de trong hop tai doanh nghiep lon
-- Bien ban hop ghi thu cong, phat hanh cham; sai/thieu y chinh, kho tong hop action items.
-- Nguoi hop phai vua lang nghe vua ghi chep -> mat tap trung, bo sot quyet dinh.
-- Tai lieu rai rac (LOffice, SharePoint/OneDrive, email, wiki) -> kho tra nhanh khi dang hop.
-- Sau hop kho theo doi cong viec: ai lam gi, deadline khi nao; cap nhat tien do roi rac.
-- Nhieu cuoc hop noi bo LPBank (da phong ban) can tuan thu bao mat, luu tru, kiem toan.
+1. Product Summary
+- MINUTE la AI assistant cho ca nhan va doi nhom trong meeting/hoc online hoac record offline.
+- ASR realtime -> transcript, recap theo moc thoi gian.
+- Post-session: summary + notes + action/decision/risk (meeting) hoac concepts + quiz (study).
+- Q&A grounded theo transcript/summary + tai lieu nguoi dung cung cap.
+- Multimodal: vua nghe vua "thay" (slide, man hinh share, bang, code) theo timeline.
 
-2. Solution Overview - Giai phap tong quan
-MeetMate la tro ly AI da giai doan (Pre-Meeting -> In-Meeting -> Post-Meeting), tich hop sau Google Meet/VNPT GoMeet & LOffice.
-Muc tieu: Chuan hoa quy trinh hop, giam ghi chep thu cong, tang kha nang theo doi cong viec sau hop.
+2. Core Features
+2.1 In-meeting (realtime)
+- ASR -> transcript lien tuc.
+- Recap dinh ky (vi du moi 2 phut) gan timestamp.
+- Hoi dap theo context (audio + video + tai lieu).
 
-2.1 Pre-Meeting (chuan bi truoc hop)
-- Tu dong bo lich tu Outlook/Teams; nhan dien chu de/doi tuong/don vi tham gia.
-- RAG tim tai lieu lien quan (de an, policy, KPI, quyet dinh truoc) tu LOffice/SharePoint.
-- Goi y agenda + "pre-read pack", gui mail/Teams cho nguoi tham du.
-- Thu thap input truoc hop (note, cau hoi, rui ro, yeu cau demo) de toi uu thoi luong.
+2.2 Post-meeting / Upload record
+- Generate summary + important notes + highlights theo timeline.
+- Meeting: action items, decisions, risks, next steps.
+- Study: concepts + quiz (4 lua chon, co giai thich).
 
-2.2 In-Meeting (tro ly realtime)
-- Join tu dong bang bot/desktop app; ASR + diarization -> transcript theo tung nguoi noi (vi/en).
-- Live recap theo moc thoi gian; "ask-AI" ngay trong cuoc hop (tra cuu policy/so lieu qua RAG)
-- Nhan dien quyet dinh, action items, risks theo ngu canh; hien thi bang viec ngay panel.
-- Tool-calling: tao task (Planner/Jira), dat lich follow-up, mo tai lieu lien quan, ghi poll/vote.
-- Co-host etiquette: khong lam gian doan; chi "noi khi duoc goi", uu tien hien thi sidebar.
+3. Settings & Personalization
+- Cho phep chon model (Gemini default, co the thay the).
+- Cho phep su dung API key LLM rieng.
+- Tuy chinh giong van, muc do chi tiet.
 
-2.3 Post-Meeting (ket thuc & theo doi)
-- Executive summary (muc tieu, quyet dinh, action/owner/deadline, rui ro, next steps).
-- Dong bo task ve cong cu LPBank dung (LOffice Work, Microsoft Planner/Jira/TFS).
-- Video highlights (trich doan keypoints), timeline + transcript co tim kiem nhu Fathom.
-- Luu tru transcript/summary co ma hoa, phan quyen, audit trail; cho phep Q&A sau hop.
-
-Gia tri mang lai:
-- Truoc hop: co mot agent tong hop, tim hieu va len san agenda chi tiet, chuyen nghiep nhat de cac stage sau su dung, va gui cho cac phong ban lien quan tham khao.
-- Trong hop: co thu ky ao realtime, recap mach lac; hoi-dap tai lieu noi bo ngay tai cho.
-- Sau hop: bien ban chuan hoa, action/owner/deadline ro rang; tu sync Planner/Jira/LOffice Work.
-- Ve dai han: hinh thanh "organizational memory" - tim lai moi quyet dinh/rui ro theo du an/phong ban.
-
-3. Tong quan cach MeetMate hoat dong (non-tech)
-3.1 Pre-Meeting - Chuan bi thong minh
-- Dong bo lich (Outlook/Teams), hieu chu de & don vi tham du
-- RAG tim dung de an/policy/KPI/bien ban cu theo quyen truy cap
-- De xuat agenda + pre-read pack co trich dan nguon; gui Teams/email
-
-3.2 In-Meeting - Tro ly realtime
-- Bot/desktop app join tu dong -> transcript theo speaker (vi/en).
-- Live recap tung moc; phat hien Decision/Action/Risk (bang viec hien ngay panel).
-- Ask-AI: tra policy/so lieu qua RAG co phan quyen.
-- Tool-calling: tao task, dat lich follow-up, mo tai lieu, poll/vote -> 1-click confirm.
-
-3.3 Post-Meeting - Tong hop & theo doi
-- Executive summary (muc tieu, quyet dinh, action/owner/deadline, rui ro, next steps).
-- Highlights video (diem nhan + timecode), transcript co tim kiem nhu Fathom.
-- Dong bo task ve Planner/Jira/LOffice Work; nhac deadline; Q&A sau hop.
-
-4. Cong nghe chinh (tom gon)
-- LLM Orchestrator (LangGraph/LangChain): 1 pipeline, 3 mode theo giai doan.
-- ASR streaming enterprise + diarization; tu vung nganh ngan hang.
-- RAG (pgvector/Milvus): ingestion tu LOffice/SharePoint/OneDrive/wiki/email, OCR PDF, chunk 400-800 tokens, permission-aware.
-- Tool-calling: Microsoft Graph (Teams/Outlook/Planner), Jira/TFS, LOffice API.
-- Guardrails: "no-source -> no-answer", chan prompt-injection, PII masking, audit trail.
-
-5. Phu hop tieu chi VNPT AI
-5.1 Tinh phu hop de bai (25d)
-- Giam ghi chep thu cong, tang theo doi sau hop dung muc tieu BTC.
-- Phan tich pain point & neu "vi sao AI": ASR + LLM + RAG + tool-calling la loi.
-- Tich hop Teams & LOffice cua LPBank (thuc tien trien khai).
-
-5.2 Tinh doi moi & khac biet (20d)
-- Co-host realtime tieng Viet, RAG theo quyen tai lieu, trich dan bat buoc.
-- Khac biet >= 30% so voi tool chi "ghi am -> transcript": MeetMate dieu phoi cong viec end-to-end (tao task, dat lich, highlights, Q&A).
-- Router provider-first (Azure/AWS/GCP) + Private Link -> an toan + linh hoat.
-
-5.3 Tinh kha thi (25d)
-- Nguon du lieu hop phap: audio cuoc hop, tai lieu noi bo da phan quyen.
-- Trien khai kha thi: Enterprise API + RAG noi bo; khong can doi MLOps nang.
-- Bao mat: ma hoa, RBAC/ABAC, zero-retention, audit; tuan thu quy dinh VN.
-- Roadmap & GTM: pilot -> MVP -> enterprise (chi tiet o muc 8).
-
-5.4 Tac dong du kien (20d)
-- Tiet kiem thoi gian: vi du 100 cuoc/ngay x tiet kiem 15 phut/cuoc = 25 gio/ngay.
-- Giam ty le hoan thanh action (co owner/deadline, nhac han).
-- Giam rui ro tuan thu (bien ban chuan, truy vet day du).
-- Tao "organizational memory" -> giam hop lap lai, nhanh ra quyet dinh.
-
-5.5 Chat luong ho so (10d)
-- Tai lieu <=5 trang, ngon ngu ro, suc tich; co wireframe y tuong va bang bam tieu chi.
-
-6. Kien truc
-- Client: Desktop app + Teams add-in (panel Live Notes/Actions/Ask-AI).
-- Gateway: "content firewall" (mask PII truoc khi goi LLM API).
-- ASR: Streaming enterprise; tra transcript + speaker.
-- Agent: Orchestrator chon profile (pre/in/post), goi RAG va tools khi can.
-- RAG: vector DB noi bo; chi tra trich doan lien quan + citations.
-- Store: Minutes/Action/Decision/Risk, highlights, audit trail; retention policy.
-
-7. Chi so do luong (KPIs)
-- Thoi gian phat hanh minutes (muc tieu: <10 phut sau hop).
-- Do tre recap live (muc tieu: <2-3s).
-- WER ASR vi/en theo domain; precision/recall action items (QA noi bo).
-- % action hoan thanh dung han, % cuoc hop co minutes tu dong.
-- Muc do su dung: so luot Ask-AI, luot mo highlights/Q&A sau hop.
-
-8. Lo trinh & GTM
-- GD0 - POC (1 don vi nghiep vu):
-  Join Teams, ASR realtime, recap live, minutes co ban; RAG 1-2 kho tai lieu.
-- GD1 - MVP (mo rong 3-5 don vi):
-  Action/Decision/Risk extractor; sync Planner/Jira/LOffice Work; Ask-AI co citations.
-- GD2 - Enterprise:
-  Guardrails day du, archive tuan thu, dashboard chat luong, highlights video.
-- GD3 - Mo rong:
-  Phan tich xu huong hop theo du an/don vi; da kenh (phong hop vat ly).
-
-9. Uoc tinh tac dong & chi phi (khung tinh)
-Case vi du: 100 cuoc/ngay x 15 phut tiet kiem/cuoc = 1.500 phut/ngay ~= 25 gio/ngay.
-Neu chi phi lao dong quy doi 300k VND/gio -> ~7,5 trieu VND/ngay; ~165 trieu VND/thang (22 ngay).
-
-Khung chi phi (pilot):
-- ASR theo phut audio + LLM theo token + ha tang tich hop.
-- Cong thuc: Tong phut hop x don gia ASR + Tong token x don gia LLM + chi phi dev/ops.
-- Toi uu: router fast/strong, nen ngu canh, cache, batch post-meeting.
-
-10. Khac biet & vi sao kho bat chuoc
-- RAG theo quyen tai lieu LOffice/SharePoint (permission-aware) + citations bat buoc.
-- Realtime co-host tieng Viet (agenda adherence, action/risk mining).
-- Tool-calling chuan hoa he sinh thai LPBank (Planner/Jira/LOffice Work).
-- Governance: content firewall, zero-retention, audit trail, version pinning.
-
-11. Rui ro chinh & phuong an giam thieu
-- Bao mat du lieu hop -> Private Link, PII masking, RBAC/ABAC, audit.
-- ASR tieng Viet chuyen nganh -> tu dien domain, tinh chinh lexicon, QA dinh ky.
-- Hallucination -> "no-source, no-answer", bat buoc citations tu RAG.
-- Vendor lock-in -> Model Gateway ho tro nhieu provider & fallback.
-- Thay doi thoi quen nguoi dung -> UI toi gian, 1-click confirm, dao tao nhanh.
+4. Guardrails
+- No-source -> no-answer.
+- Neu thieu du lieu, tra loi ro rang va de xuat buoc tiep theo.
+- Khong tu dong thuc thi tool-calling neu chua duoc xac nhan.
 """
 
-HOME_ASK_SYSTEM_PROMPT = f"""Ban la MeetMate Assistant cho LPBank.
+HOME_ASK_SYSTEM_PROMPT = f"""Ban la MINUTE Assistant.
 
 Quy tac bat buoc:
 - Chi su dung thong tin nam trong <context>.
-- Neu cau hoi khong nam trong context hoac qua chuyen sau/ngoai pham vi, tra loi: "Minh chua co thong tin ve noi dung do trong tai lieu MeetMate hien tai. Ban co the hoi ve MeetMate, LPBank va cac muc trong mo ta."
-- Neu nguoi dung chao hoi, cam on, chia se cam xuc hoac hoi dap giao tiep co ban, hay phan hoi than thien va goi y co the hoi ve MeetMate.
+- Neu cau hoi khong nam trong context hoac qua chuyen sau/ngoai pham vi, tra loi: "Minh chua co thong tin ve noi dung do trong tai lieu MINUTE hien tai. Ban co the hoi ve MINUTE, chuc nang va luong trai nghiem."
+- Neu nguoi dung chao hoi, cam on, chia se cam xuc hoac hoi dap giao tiep co ban, hay phan hoi than thien va goi y co the hoi ve MINUTE.
 - Khong bịa, khong suy doan ngoai context, khong dua thong tin moi.
 - Tra loi bang tieng Viet, van noi tu nhien, 1-5 cau, khong markdown.
 
@@ -178,10 +73,9 @@ Quy tac bat buoc:
 """
 
 HOME_ASK_MOCK_RESPONSE = (
-    "MeetMate la tro ly hop thong minh cho AI-First Workplace tai LPBank. "
-    "Ung dung ho tro truoc, trong va sau cuoc hop: tu dong agenda, recap, "
-    "bien ban, action items va theo doi cong viec. "
-    "Nen tang gom desktop app + Teams add-in, ket hop RAG, LLM va tool-calling."
+    "MINUTE la tro ly thong minh cho meetings va study sessions. "
+    "Ung dung ho tro live recap, hoi dap theo ngu canh, va tao bien ban sau buoi hop. "
+    "Co the upload record, tao transcript + summary + action/quiz, va tra loi theo tai lieu lien quan."
 )
 
 
@@ -208,47 +102,30 @@ def get_or_create_session(session_id: Optional[str], meeting_id: Optional[str]) 
 @router.get('/status')
 def get_ai_status():
     """Check if AI is available"""
-    from app.core.config import get_settings
-    settings = get_settings()
-    
-    return {
-        'groq_available': is_gemini_available(),
-        'status': 'ready' if is_gemini_available() else 'mock_mode',
-        'model': getattr(settings, 'groq_model', None),
-        'api_key_set': bool(getattr(settings, 'groq_api_key', '') and len(getattr(settings, 'groq_api_key', '')) > 10),
-        'api_key_preview': (getattr(settings, 'groq_api_key', '')[:8] + '...') if getattr(settings, 'groq_api_key', '') else None
-    }
+    return get_llm_status()
 
 
 @router.get('/test')
-async def test_groq():
-    """Test Groq API directly"""
-    from app.core.config import get_settings
-    from groq import Groq
-    
-    settings = get_settings()
-    
-    if not settings.groq_api_key:
-        return {'error': 'No API key configured', 'key': None}
-    
+async def test_llm():
+    """Test Gemini/Groq via unified wrapper"""
+    status = get_llm_status()
+    if status["status"] != "ready":
+        return {"success": False, "error": "No API key configured", "status": status}
     try:
-        client = Groq(api_key=settings.groq_api_key)
-        resp = client.chat.completions.create(
-            messages=[{"role": "user", "content": "Say hello in Vietnamese"}],
-            model=settings.groq_model,
-            max_tokens=30
-        )
+        chat = GeminiChat()
+        response = await chat.chat("Say hello in Vietnamese.")
         return {
-            'success': True,
-            'response': resp.choices[0].message.content,
-            'model': settings.groq_model
+            "success": True,
+            "response": response,
+            "provider": status["provider"],
+            "model": status["model"],
+            "sdk": status.get("sdk"),
         }
     except Exception as e:
         return {
-            'success': False,
-            'error': str(e),
-            'model': settings.groq_model,
-            'api_key_preview': settings.groq_api_key[:8] + '...' if settings.groq_api_key else None
+            "success": False,
+            "error": str(e),
+            "status": status,
         }
 
 
@@ -331,7 +208,7 @@ async def send_message(
 
 @router.post('/home', response_model=ChatResponse)
 async def home_ask(request: HomeAskRequest):
-    """Lightweight home ask endpoint with strict MeetMate context."""
+    """Lightweight home ask endpoint with strict MINUTE context."""
     message = request.message.strip()
     if not message:
         raise HTTPException(status_code=400, detail="Message is required")
