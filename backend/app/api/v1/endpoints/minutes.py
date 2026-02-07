@@ -6,6 +6,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from typing import Optional
 from pydantic import BaseModel
+import logging
 
 from app.db.session import get_db
 from app.schemas.minutes import (
@@ -17,6 +18,7 @@ from app.schemas.minutes import (
 from app.services import minutes_service, participant_service
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class TestEmailRequest(BaseModel):
@@ -187,6 +189,14 @@ async def generate_minutes(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
+        logger.error(
+            "generate_minutes failed meeting_id=%s template_id=%s format=%s: %s",
+            request.meeting_id,
+            request.template_id,
+            request.format,
+            e,
+            exc_info=True,
+        )
         raise HTTPException(status_code=500, detail=f"Failed to generate minutes: {str(e)}")
 
 

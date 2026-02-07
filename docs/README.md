@@ -39,6 +39,7 @@
 | [In-Meeting Flow](architecture/in_meeting_flow.md) | Real-time transcript flow |
 | [RAG Architecture](architecture/rag_architecture.md) | RAG implementation |
 | [ASR Docker](ASR_DOCKER.md) | ASR service (whisper.cpp) setup |
+| [In-Meeting Video Capture Handoff](implementation/IN_MEETING_VIDEO_CAPTURE_API_HANDOFF.md) | API handoff for video capture -> transcript + visual RAG context |
 | [Deployment](implementation/DEPLOYMENT.md) | Deploy guide |
 
 ## 🚀 Quick Start
