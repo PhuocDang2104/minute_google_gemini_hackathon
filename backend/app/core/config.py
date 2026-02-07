@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     openai_api_key: str = ''
     gemini_api_key: str = ''  # legacy
     groq_api_key: str = ''
+    jina_api_key: str = ''
+    jina_embed_model: str = 'jina-embeddings-v3'
+    jina_embed_task: str = 'text-matching'
+    jina_embed_dimensions: int = 1024
 
     # VNPT SmartVoice (streaming STT) - configured via env at deploy time
     smartvoice_grpc_endpoint: str = ''  # host:port (e.g. smartvoice.example.com:443)

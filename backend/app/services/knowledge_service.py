@@ -591,7 +591,7 @@ async def upload_document(
                             id, document_id, chunk_index, content, embedding, scope_meeting, scope_project, created_at
                         )
                         VALUES (
-                            :id, :document_id, :chunk_index, :content, CAST(:embedding AS vector),
+                            :id, :document_id, :chunk_index, :content, CAST(:embedding AS vector(1024)),
                             :scope_meeting, :scope_project, now()
                         )
                         """
@@ -805,7 +805,7 @@ async def _vector_search_documents(
                     kd.created_at,
                     kd.updated_at,
                     NULL::text AS document_type,
-                    (kc.embedding <=> CAST(:query_vec AS vector)) AS distance
+                    (kc.embedding <=> CAST(:query_vec AS vector(1024))) AS distance
                 FROM knowledge_chunk kc
                 JOIN knowledge_document kd ON kc.document_id = kd.id
                 WHERE {where_clause}
@@ -958,7 +958,7 @@ async def query_knowledge_ai(
                     NULL::text AS document_type,
                     kc.content,
                     kc.chunk_index,
-                    (kc.embedding <=> CAST(:query_vec AS vector)) AS distance
+                    (kc.embedding <=> CAST(:query_vec AS vector(1024))) AS distance
                 FROM knowledge_chunk kc
                 JOIN knowledge_document kd ON kc.document_id = kd.id
                     WHERE {where_clause}

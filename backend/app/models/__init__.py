@@ -4,6 +4,7 @@ from .document import Document
 from .embedding import Embedding
 from .chat_session import ChatSession, ChatMessage
 from .marketing import MarketingLead
+from .knowledge import KnowledgeDocument, KnowledgeChunk
 from .adr import (
     TranscriptChunk,
     TopicSegment,
@@ -14,7 +15,7 @@ from .adr import (
     AiEventLog,
     ToolSuggestion,
 )
-from .timeline import RecapSegment, VisualEvent, ContextWindow
+from .timeline import RecapSegment, VisualEvent, VisualObjectEvent, ContextWindow
 from .summary import MeetingSummary
 from .study import NoteItem, QuizItem
 from .meeting_recording import MeetingRecording
@@ -30,6 +31,8 @@ __all__ = [
     'Embedding',
     'ChatSession',
     'ChatMessage',
+    'KnowledgeDocument',
+    'KnowledgeChunk',
     'TranscriptChunk',
     'TopicSegment',
     'ActionItem',
@@ -41,6 +44,7 @@ __all__ = [
     'MarketingLead',
     'RecapSegment',
     'VisualEvent',
+    'VisualObjectEvent',
     'ContextWindow',
     'MeetingSummary',
     'MeetingRecording',
