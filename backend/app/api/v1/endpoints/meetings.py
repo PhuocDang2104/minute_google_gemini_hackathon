@@ -403,6 +403,8 @@ async def trigger_inference(
             "status": "completed",
             "message": "Video processing completed successfully",
             "transcript_count": result.get("transcript_count", 0),
+            "visual_event_count": result.get("visual_event_count", 0),
+            "visual_object_count": result.get("visual_object_count", 0),
             "minutes_id": result.get("minutes_id"),
             "pdf_url": result.get("pdf_url"),
         }

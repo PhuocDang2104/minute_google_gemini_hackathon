@@ -254,6 +254,25 @@ def _is_smalltalk_or_noise(query: str) -> bool:
     return any(q == kw or q.startswith(kw + " ") for kw in smalltalk_keywords)
 
 
+def _extract_inline_context_from_query(query: str) -> List[str]:
+    """Extract quoted snippets from user query as emergency context."""
+    if not query:
+        return []
+    snippets: List[str] = []
+    patterns = [
+        r'"([^"]+)"',
+        r"“([^”]+)”",
+        r"\'([^\']+)\'",
+    ]
+    for pattern in patterns:
+        for match in re.findall(pattern, query):
+            text_val = _sanitize_text(match)
+            if text_val and len(text_val) >= 4:
+                snippets.append(text_val)
+    deduped = list(dict.fromkeys(snippets))
+    return deduped[:6]
+
+
 def _format_vector(vec: list[float]) -> str:
     """Format embedding list to Postgres vector literal."""
     return "[" + ",".join(f"{x:.6f}" for x in vec) + "]"
@@ -1236,6 +1255,14 @@ async def query_knowledge_ai(
             continue
         seen_ctx.add(ctx_line)
         context_parts.append(ctx_line)
+
+    # If retrieval misses but user already pasted transcript quotes, use them as inline context.
+    if not context_parts:
+        inline_snippets = _extract_inline_context_from_query(request.query)
+        for idx, snippet in enumerate(inline_snippets, start=1):
+            context_parts.append(f"[Inline snippet {idx} | score=0.500] {snippet}")
+            citations.append(f"Inline snippet {idx}")
+
     context = "\n".join(context_parts) if context_parts else "Không có ngữ cảnh liên quan."
     citations = list(dict.fromkeys(citations))
 
@@ -1277,7 +1304,8 @@ Hãy:
             chat = GeminiChat(
                 system_prompt=(
                     "Bạn là MINUTE RAG Assistant. Trả lời ngắn gọn bằng tiếng Việt. "
-                    "Chỉ dùng thông tin trong Context (docs, transcript, visual). Nếu thiếu thông tin, nói rõ."
+                    "Chỉ dùng thông tin trong Context (docs, transcript, visual). "
+                    "Nếu context chỉ phản ánh một phần cuộc họp, vẫn phải trả lời phần chắc chắn và ghi rõ phạm vi."
                 )
             )
             prompt = f"""Câu hỏi: {request.query}
@@ -1288,7 +1316,8 @@ Context (top chunks):
 Yêu cầu:
 - Trả lời ngắn gọn, không markdown.
 - Nếu dùng thông tin, nêu rõ nguồn trong ngoặc [] (có thể là tài liệu, transcript chunk, visual event).
-- Nếu không đủ thông tin, trả lời rằng không đủ dữ liệu."""
+- Nếu dữ liệu chỉ là một phần, hãy tóm tắt phần đó trước, sau đó ghi rõ "phạm vi hiện có chỉ gồm ...".
+- Chỉ trả lời "không đủ dữ liệu" khi context thực sự rỗng hoặc vô nghĩa."""
             answer = await chat.chat(prompt)
             confidence = 0.90 if relevant_docs else 0.60
             if best_score is not None:

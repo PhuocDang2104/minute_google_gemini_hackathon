@@ -7,6 +7,9 @@ import tempfile
 import httpx
 from pathlib import Path
 from typing import Optional, List, Dict, Any
+from uuid import uuid4
+from sqlalchemy import text
+from sqlalchemy.sql.elements import TextClause
 from sqlalchemy.orm import Session
 
 from app.services import audio_processing, transcript_service, asr_service
@@ -14,6 +17,183 @@ from app.services import minutes_service
 from app.schemas.transcript import TranscriptChunkCreate
 
 logger = logging.getLogger(__name__)
+
+
+def _table_exists(db: Session, table_name: str) -> bool:
+    try:
+        result = db.execute(
+            text("SELECT to_regclass(:table_name)"),
+            {"table_name": f"public.{table_name}"},
+        ).scalar()
+        return bool(result)
+    except Exception:
+        return False
+
+
+def _get_table_columns(db: Session, table_name: str) -> set[str]:
+    rows = db.execute(
+        text(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = :table_name
+            """
+        ),
+        {"table_name": table_name},
+    ).fetchall()
+    return {row[0] for row in rows}
+
+
+def _persist_visual_context(
+    db: Session,
+    meeting_id: str,
+    payload: Dict[str, Any],
+) -> Dict[str, int]:
+    """
+    Save visual events/object detections from ASR visual-ingest endpoint.
+    Safe against partially migrated schemas by checking columns dynamically.
+    """
+    if not _table_exists(db, "visual_event"):
+        logger.warning("visual_event table not found; skip visual context persistence")
+        return {"events_saved": 0, "objects_saved": 0}
+
+    visual_event_cols = _get_table_columns(db, "visual_event")
+    visual_object_exists = _table_exists(db, "visual_object_event")
+    visual_object_cols = _get_table_columns(db, "visual_object_event") if visual_object_exists else set()
+
+    # Replace old visual context for this meeting to keep timeline deterministic after re-run.
+    if visual_object_exists:
+        db.execute(
+            text("DELETE FROM visual_object_event WHERE meeting_id = :meeting_id"),
+            {"meeting_id": meeting_id},
+        )
+    db.execute(
+        text("DELETE FROM visual_event WHERE meeting_id = :meeting_id"),
+        {"meeting_id": meeting_id},
+    )
+
+    visual_events = payload.get("visual_events") or []
+    visual_objects = payload.get("visual_objects") or []
+
+    # Track inserted visual_event IDs by timestamp for linking objects.
+    event_refs: List[tuple[float, str]] = []
+    events_saved = 0
+
+    for event in visual_events:
+        event_id = str(uuid4())
+        timestamp = float(event.get("timestamp") or 0.0)
+
+        fields = ["id", "meeting_id", "timestamp"]
+        params: Dict[str, Any] = {
+            "id": event_id,
+            "meeting_id": meeting_id,
+            "timestamp": timestamp,
+        }
+
+        if "image_url" in visual_event_cols:
+            fields.append("image_url")
+            params["image_url"] = event.get("image_url") or event.get("image_name")
+        if "description" in visual_event_cols:
+            fields.append("description")
+            params["description"] = event.get("description")
+        if "ocr_text" in visual_event_cols:
+            fields.append("ocr_text")
+            params["ocr_text"] = event.get("ocr_text")
+        if "event_type" in visual_event_cols:
+            fields.append("event_type")
+            params["event_type"] = event.get("event_type")
+        if "created_at" in visual_event_cols:
+            fields.append("created_at")
+            params["created_at"] = text("now()")
+        if "updated_at" in visual_event_cols:
+            fields.append("updated_at")
+            params["updated_at"] = text("now()")
+
+        values_expr = []
+        query_params: Dict[str, Any] = {}
+        for name in fields:
+            value = params[name]
+            if isinstance(value, TextClause):
+                values_expr.append("now()")
+            else:
+                values_expr.append(f":{name}")
+                query_params[name] = value
+
+        db.execute(
+            text(
+                f"""
+                INSERT INTO visual_event ({', '.join(fields)})
+                VALUES ({', '.join(values_expr)})
+                """
+            ),
+            query_params,
+        )
+        event_refs.append((timestamp, event_id))
+        events_saved += 1
+
+    objects_saved = 0
+    if visual_object_exists:
+        for obj in visual_objects:
+            timestamp = float(obj.get("timestamp") or 0.0)
+            label = (obj.get("object_label") or "object").strip() or "object"
+
+            nearest_event_id = None
+            if event_refs:
+                nearest_event_id = min(event_refs, key=lambda item: abs(item[0] - timestamp))[1]
+
+            fields = ["id", "meeting_id", "timestamp", "object_label"]
+            params = {
+                "id": str(uuid4()),
+                "meeting_id": meeting_id,
+                "timestamp": timestamp,
+                "object_label": label,
+            }
+
+            if "visual_event_id" in visual_object_cols:
+                fields.append("visual_event_id")
+                params["visual_event_id"] = nearest_event_id
+            if "confidence" in visual_object_cols:
+                fields.append("confidence")
+                params["confidence"] = obj.get("confidence")
+            if "ocr_text" in visual_object_cols:
+                fields.append("ocr_text")
+                params["ocr_text"] = obj.get("ocr_text")
+            if "source" in visual_object_cols:
+                fields.append("source")
+                params["source"] = obj.get("source")
+            if "frame_url" in visual_object_cols:
+                fields.append("frame_url")
+                params["frame_url"] = obj.get("frame_url") or obj.get("image_name")
+            if "created_at" in visual_object_cols:
+                fields.append("created_at")
+                params["created_at"] = text("now()")
+            if "updated_at" in visual_object_cols:
+                fields.append("updated_at")
+                params["updated_at"] = text("now()")
+
+            values_expr = []
+            query_params = {}
+            for name in fields:
+                value = params[name]
+                if isinstance(value, TextClause):
+                    values_expr.append("now()")
+                else:
+                    values_expr.append(f":{name}")
+                    query_params[name] = value
+
+            db.execute(
+                text(
+                    f"""
+                    INSERT INTO visual_object_event ({', '.join(fields)})
+                    VALUES ({', '.join(values_expr)})
+                    """
+                ),
+                query_params,
+            )
+            objects_saved += 1
+
+    db.commit()
+    return {"events_saved": events_saved, "objects_saved": objects_saved}
 
 
 async def process_meeting_video(
@@ -67,6 +247,26 @@ async def process_meeting_video(
                 raise FileNotFoundError(f"Video file not found: {video_path}")
         
         logger.info(f"Processing video: {video_path}")
+
+        # Step 1.5: Extract visual timeline (keyframes/OCR/captions) for session RAG.
+        visual_stats = {"events_saved": 0, "objects_saved": 0}
+        try:
+            logger.info("Analyzing visual timeline with ASR visual-ingest...")
+            visual_payload = await asr_service.analyze_video_file(
+                video_path,
+                meeting_id=meeting_id,
+                run_ocr=True,
+                run_caption=False,
+            )
+            visual_stats = _persist_visual_context(db, meeting_id, visual_payload)
+            logger.info(
+                "Saved visual context: %s events, %s objects",
+                visual_stats["events_saved"],
+                visual_stats["objects_saved"],
+            )
+        except Exception as exc:
+            db.rollback()
+            logger.warning("Visual ingest failed (continue pipeline): %s", exc)
         
         # Step 2: Extract audio
         logger.info("Extracting audio from video...")
@@ -146,6 +346,8 @@ async def process_meeting_video(
             return {
                 "status": "completed",
                 "transcript_count": result.total,
+                "visual_event_count": visual_stats["events_saved"],
+                "visual_object_count": visual_stats["objects_saved"],
                 "minutes_id": minutes_id,
                 "pdf_url": pdf_url,
             }
@@ -238,4 +440,3 @@ def _extract_whisper_segments(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
             "confidence": 1.0,
         })
     return normalized
-
