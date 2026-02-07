@@ -272,7 +272,7 @@ def update_llm_settings(
     update_query = text(
         """
         UPDATE user_account
-        SET preferences = :preferences::jsonb, updated_at = now()
+        SET preferences = CAST(:preferences AS jsonb), updated_at = now()
         WHERE id = :user_id
         RETURNING id::text
         """
