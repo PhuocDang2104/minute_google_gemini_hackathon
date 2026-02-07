@@ -1,5 +1,6 @@
 from typing import Optional, List, Tuple, Dict, Any
 import json
+import uuid
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.schemas.user import User, UserList, Department
@@ -8,6 +9,32 @@ from app.core.config import get_settings
 from app.utils.crypto import encrypt_secret, decrypt_secret
 
 settings = get_settings()
+
+_DEMO_LLM_USER_ID = "00000000-0000-0000-0000-000000000001"
+
+
+def _resolve_llm_user_id(user_id: str) -> Tuple[str, bool]:
+    try:
+        uuid.UUID(str(user_id))
+        return str(user_id), False
+    except (ValueError, TypeError):
+        return _DEMO_LLM_USER_ID, True
+
+
+def _ensure_demo_user(db: Session, user_id: str) -> None:
+    demo_email = f"demo-llm-{user_id[:8]}@minute.local"
+    insert_query = text(
+        """
+        INSERT INTO user_account (id, email, display_name, role, is_active, created_at, updated_at)
+        VALUES (:id, :email, :display_name, 'user', true, now(), now())
+        ON CONFLICT (id) DO NOTHING
+        """
+    )
+    db.execute(
+        insert_query,
+        {"id": user_id, "email": demo_email, "display_name": "Demo LLM"},
+    )
+    db.commit()
 
 
 def get_user_stub() -> User:
@@ -193,10 +220,15 @@ def _normalize_llm_settings(raw_llm: Dict[str, Any]) -> LlmSettings:
 
 
 def get_llm_settings(db: Session, user_id: str) -> Optional[LlmSettings]:
+    resolved_id, is_demo = _resolve_llm_user_id(user_id)
+    if is_demo:
+        _ensure_demo_user(db, resolved_id)
     query = text("SELECT preferences FROM user_account WHERE id = :user_id")
-    result = db.execute(query, {"user_id": user_id})
+    result = db.execute(query, {"user_id": resolved_id})
     row = result.fetchone()
     if not row:
+        if is_demo:
+            return _normalize_llm_settings({})
         return None
     prefs = row[0] or {}
     if not isinstance(prefs, dict):
@@ -210,12 +242,19 @@ def get_llm_settings(db: Session, user_id: str) -> Optional[LlmSettings]:
 def update_llm_settings(
     db: Session, user_id: str, payload: LlmSettingsUpdate
 ) -> Optional[LlmSettings]:
+    resolved_id, is_demo = _resolve_llm_user_id(user_id)
+    if is_demo:
+        _ensure_demo_user(db, resolved_id)
     query = text("SELECT preferences FROM user_account WHERE id = :user_id")
-    result = db.execute(query, {"user_id": user_id})
+    result = db.execute(query, {"user_id": resolved_id})
     row = result.fetchone()
     if not row:
-        return None
-    prefs = row[0] or {}
+        if is_demo:
+            prefs = {}
+        else:
+            return None
+    else:
+        prefs = row[0] or {}
     if not isinstance(prefs, dict):
         prefs = {}
     llm = prefs.get("llm") or {}
@@ -240,33 +279,50 @@ def update_llm_settings(
     )
     result = db.execute(
         update_query,
-        {"preferences": json.dumps(prefs), "user_id": user_id},
+        {"preferences": json.dumps(prefs), "user_id": resolved_id},
     )
     row = result.fetchone()
     if not row:
         db.rollback()
+        if is_demo:
+            return _normalize_llm_settings(llm)
         return None
     db.commit()
     return _normalize_llm_settings(llm)
 
 
 def get_user_llm_override(db: Session, user_id: str) -> Optional[Dict[str, str]]:
-    query = text("SELECT preferences FROM user_account WHERE id = :user_id")
-    result = db.execute(query, {"user_id": user_id})
-    row = result.fetchone()
-    if not row:
+    def _fetch_override(target_user_id: str) -> Optional[Dict[str, str]]:
+        query = text("SELECT preferences FROM user_account WHERE id = :user_id")
+        result = db.execute(query, {"user_id": target_user_id})
+        row = result.fetchone()
+        if not row:
+            return None
+        prefs = row[0] or {}
+        if not isinstance(prefs, dict):
+            return None
+        llm = prefs.get("llm") or {}
+        if not isinstance(llm, dict):
+            return None
+        provider = llm.get("provider") or ""
+        model = llm.get("model") or ""
+        api_key = decrypt_secret(llm.get("api_key") or "")
+        if not (provider and model and api_key):
+            return None
+        if provider not in ("gemini", "groq"):
+            return None
+        return {"provider": provider, "model": model, "api_key": api_key}
+
+    try:
+        uuid.UUID(str(user_id))
+        override = _fetch_override(str(user_id))
+    except (ValueError, TypeError):
+        override = None
+
+    if override:
+        return override
+
+    demo_id = _DEMO_LLM_USER_ID
+    if user_id == demo_id:
         return None
-    prefs = row[0] or {}
-    if not isinstance(prefs, dict):
-        return None
-    llm = prefs.get("llm") or {}
-    if not isinstance(llm, dict):
-        return None
-    provider = llm.get("provider") or ""
-    model = llm.get("model") or ""
-    api_key = decrypt_secret(llm.get("api_key") or "")
-    if not (provider and model and api_key):
-        return None
-    if provider not in ("gemini", "groq"):
-        return None
-    return {"provider": provider, "model": model, "api_key": api_key}
+    return _fetch_override(demo_id)
