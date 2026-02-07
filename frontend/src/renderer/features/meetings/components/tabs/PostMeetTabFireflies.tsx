@@ -190,9 +190,9 @@ export const PostMeetTabFireflies = ({ meeting, onRefresh }: PostMeetTabFireflie
       const [minutesData, transcriptData, actionsData, decisionsData, risksData] = await Promise.all([
         minutesApi.getLatest(meeting.id).catch(() => null),
         transcriptsApi.list(meeting.id).catch(() => ({ chunks: [] })),
-        itemsApi.listActions({ meeting_id: meeting.id }).catch(() => ({ items: [] })),
-        itemsApi.listDecisions({ meeting_id: meeting.id }).catch(() => ({ items: [] })),
-        itemsApi.listRisks({ meeting_id: meeting.id }).catch(() => ({ items: [] })),
+        itemsApi.listActions(meeting.id).catch(() => ({ items: [] })),
+        itemsApi.listDecisions(meeting.id).catch(() => ({ items: [] })),
+        itemsApi.listRisks(meeting.id).catch(() => ({ items: [] })),
       ]);
 
       setMinutes(minutesData);

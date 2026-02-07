@@ -992,6 +992,40 @@ async def query_knowledge_ai(
         except Exception as exc:
             logger.error("RAG query vector path failed: %s", exc, exc_info=True)
 
+    # Fallback retrieval path when chunks/embeddings are not available yet:
+    # use metadata text search from uploaded documents scoped by meeting/project.
+    if not chunks:
+        try:
+            fallback_docs = await search_documents(
+                db,
+                KnowledgeSearchRequest(
+                    query=request.query,
+                    limit=request.limit,
+                    offset=0,
+                    source=None,
+                    category=None,
+                    tags=None,
+                    meeting_id=request.meeting_id,
+                    project_id=request.project_id,
+                ),
+            )
+            if fallback_docs.documents:
+                relevant_docs = fallback_docs.documents
+                citations = [d.title for d in relevant_docs]
+                for idx, doc in enumerate(relevant_docs):
+                    text_blob = _sanitize_text(f"{doc.title}. {doc.description or ''}")[:800]
+                    if text_blob:
+                        chunks.append(
+                            {
+                                "doc_id": str(doc.id),
+                                "title": doc.title,
+                                "distance": 0.6 + (idx * 0.01),
+                                "text": text_blob,
+                            }
+                        )
+        except Exception as exc:
+            logger.warning("RAG text fallback failed: %s", exc)
+
     # Build context
     context_parts = []
     for ch in chunks[: top_k_chunks]:

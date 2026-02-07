@@ -22,7 +22,9 @@ from app.schemas.chat import (
     GenerateSummaryRequest,
     AIGenerationResponse,
 )
+from app.schemas.knowledge import KnowledgeQueryRequest
 from app.llm.gemini_client import GeminiChat, MeetingAIAssistant, is_gemini_available, get_llm_status
+from app.services import knowledge_service
 
 router = APIRouter()
 
@@ -140,10 +142,11 @@ async def send_message(
     
     # Get meeting context if requested
     context = None
+    project_id = None
     if request.include_context and request.meeting_id:
         try:
             query = text("""
-                SELECT m.title, m.meeting_type, m.description, p.name as project_name
+                SELECT m.title, m.meeting_type, m.description, p.name as project_name, p.id::text as project_id
                 FROM meeting m
                 LEFT JOIN project p ON m.project_id = p.id
                 WHERE m.id = :meeting_id
@@ -152,12 +155,37 @@ async def send_message(
             row = result.fetchone()
             if row:
                 context = f"Cuộc họp: {row[0]}\nLoại: {row[1]}\nMô tả: {row[2]}\nDự án: {row[3]}"
+                project_id = row[4]
         except Exception:
             pass
     
-    # Get AI response
+    # Get AI response (RAG by session upload first, then fallback to plain chat)
     chat: GeminiChat = session['chat']
-    response_text = await chat.chat(request.message, context)
+    response_text = ""
+    response_sources = None
+    confidence = 0.85 if is_gemini_available() else 0.7
+
+    if request.include_context and request.meeting_id:
+        try:
+            rag_result = await knowledge_service.query_knowledge_ai(
+                db,
+                KnowledgeQueryRequest(
+                    query=request.message,
+                    include_documents=True,
+                    include_meetings=True,
+                    limit=5,
+                    meeting_id=request.meeting_id,
+                    project_id=project_id,
+                ),
+            )
+            response_text = rag_result.answer
+            response_sources = [doc.title for doc in rag_result.relevant_documents] or None
+            confidence = float(rag_result.confidence or confidence)
+        except Exception as exc:
+            print(f"RAG query failed, fallback to chat: {exc}")
+
+    if not response_text:
+        response_text = await chat.chat(request.message, context)
     
     # Save message to session
     session['messages'].append({
@@ -201,7 +229,8 @@ async def send_message(
         id=str(uuid4()),
         message=response_text,
         role='assistant',
-        confidence=0.85 if is_gemini_available() else 0.7,
+        confidence=confidence,
+        sources=response_sources,
         created_at=datetime.utcnow()
     )
 
