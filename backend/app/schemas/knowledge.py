@@ -42,6 +42,8 @@ class KnowledgeDocumentUpdate(BaseModel):
 class KnowledgeDocument(KnowledgeDocumentBase):
     """Knowledge document response"""
     id: UUID
+    meeting_id: Optional[UUID] = None
+    project_id: Optional[UUID] = None
     file_type: str
     file_size: Optional[int] = None
     file_url: Optional[str] = None

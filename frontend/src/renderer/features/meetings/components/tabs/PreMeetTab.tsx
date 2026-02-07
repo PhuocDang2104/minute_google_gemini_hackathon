@@ -1049,9 +1049,13 @@ const DocumentsPanel = ({ meetingId }: { meetingId: string }) => {
     setIsLoading(true);
     try {
       const result = await knowledgeApi.list({ limit: 20, meeting_id: meetingId });
-      setDocuments(result.documents);
       // preload available docs for selection
       const allDocs = await knowledgeApi.list({ limit: 50 });
+      const meetingScopedDocs = allDocs.documents.filter((doc) => doc.meeting_id === meetingId);
+
+      // Primary source: backend meeting filter.
+      // Fallback: client-side filter from all docs for older backend schema/runtime mismatches.
+      setDocuments(result.documents.length > 0 ? result.documents : meetingScopedDocs);
       setAvailableDocs(allDocs.documents);
     } catch (err) {
       console.error('Failed to load documents:', err);

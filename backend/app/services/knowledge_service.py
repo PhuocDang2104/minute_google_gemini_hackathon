@@ -209,6 +209,8 @@ def _row_to_doc(row) -> KnowledgeDocument:
     """Map DB row -> KnowledgeDocument; fill missing fields with defaults."""
     return KnowledgeDocument(
         id=row["id"],
+        meeting_id=row.get("meeting_id"),
+        project_id=row.get("project_id"),
         title=row["title"],
         description=row.get("description"),
         document_type=row.get("document_type") or "document",
@@ -227,11 +229,116 @@ def _row_to_doc(row) -> KnowledgeDocument:
     )
 
 
+def _matches_uuid(value: Any, target: Optional[UUID]) -> bool:
+    if target is None:
+        return True
+    if value is None:
+        return False
+    return str(value) == str(target)
+
+
+def _filter_mock_docs(
+    *,
+    document_type: Optional[str] = None,
+    source: Optional[str] = None,
+    category: Optional[str] = None,
+    meeting_id: Optional[UUID] = None,
+    project_id: Optional[UUID] = None,
+) -> List[KnowledgeDocument]:
+    docs = list(_mock_knowledge_docs.values())
+    if document_type:
+        docs = [d for d in docs if d.document_type == document_type]
+    if source:
+        docs = [d for d in docs if d.source == source]
+    if category:
+        docs = [d for d in docs if d.category == category]
+    if meeting_id:
+        docs = [d for d in docs if _matches_uuid(getattr(d, "meeting_id", None), meeting_id)]
+    if project_id:
+        docs = [d for d in docs if _matches_uuid(getattr(d, "project_id", None), project_id)]
+    docs.sort(key=lambda x: x.uploaded_at, reverse=True)
+    return docs
+
+
 def _sanitize_text(text: str) -> str:
     """Remove NUL and trim."""
     if not text:
         return ""
     return text.replace("\x00", "").strip()
+
+
+def _get_table_columns(db: Session, table_name: str) -> set[str]:
+    try:
+        rows = db.execute(
+            text(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = :table_name
+                """
+            ),
+            {"table_name": table_name},
+        ).fetchall()
+        return {row[0] for row in rows}
+    except Exception:
+        return set()
+
+
+def _ensure_knowledge_document_schema(db: Session) -> None:
+    """
+    Safety net for environments where migrations were partially applied.
+    Ensures upload/list won't silently fail due missing columns.
+    """
+    try:
+        if not _table_exists(db, "knowledge_document"):
+            db.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS knowledge_document (
+                        id UUID PRIMARY KEY,
+                        title TEXT NOT NULL,
+                        description TEXT,
+                        document_type TEXT DEFAULT 'document',
+                        source TEXT,
+                        category TEXT,
+                        tags TEXT[],
+                        file_type TEXT,
+                        file_size INTEGER,
+                        storage_key TEXT,
+                        file_url TEXT,
+                        org_id UUID,
+                        project_id UUID,
+                        meeting_id UUID,
+                        visibility TEXT,
+                        created_at TIMESTAMPTZ DEFAULT now(),
+                        updated_at TIMESTAMPTZ DEFAULT now()
+                    );
+                    """
+                )
+            )
+        else:
+            # Add only the columns required by current service logic.
+            db.execute(text("ALTER TABLE knowledge_document ADD COLUMN IF NOT EXISTS document_type TEXT;"))
+            db.execute(text("ALTER TABLE knowledge_document ADD COLUMN IF NOT EXISTS source TEXT;"))
+            db.execute(text("ALTER TABLE knowledge_document ADD COLUMN IF NOT EXISTS category TEXT;"))
+            db.execute(text("ALTER TABLE knowledge_document ADD COLUMN IF NOT EXISTS tags TEXT[];"))
+            db.execute(text("ALTER TABLE knowledge_document ADD COLUMN IF NOT EXISTS file_type TEXT;"))
+            db.execute(text("ALTER TABLE knowledge_document ADD COLUMN IF NOT EXISTS file_size INTEGER;"))
+            db.execute(text("ALTER TABLE knowledge_document ADD COLUMN IF NOT EXISTS storage_key TEXT;"))
+            db.execute(text("ALTER TABLE knowledge_document ADD COLUMN IF NOT EXISTS file_url TEXT;"))
+            db.execute(text("ALTER TABLE knowledge_document ADD COLUMN IF NOT EXISTS org_id UUID;"))
+            db.execute(text("ALTER TABLE knowledge_document ADD COLUMN IF NOT EXISTS project_id UUID;"))
+            db.execute(text("ALTER TABLE knowledge_document ADD COLUMN IF NOT EXISTS meeting_id UUID;"))
+            db.execute(text("ALTER TABLE knowledge_document ADD COLUMN IF NOT EXISTS visibility TEXT;"))
+            db.execute(text("ALTER TABLE knowledge_document ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();"))
+            db.execute(text("ALTER TABLE knowledge_document ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();"))
+
+        db.execute(text("CREATE INDEX IF NOT EXISTS idx_knowledge_document_meeting ON knowledge_document(meeting_id);"))
+        db.execute(text("CREATE INDEX IF NOT EXISTS idx_knowledge_document_project ON knowledge_document(project_id);"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.warning("Failed ensuring knowledge_document schema: %s", exc)
 
 
 def _normalize_for_embedding(text: str) -> str:
@@ -374,6 +481,9 @@ async def list_documents(
     try:
         conditions = ["1=1"]
         params = {"skip": skip, "limit": limit}
+        if document_type:
+            conditions.append("document_type = :document_type")
+            params["document_type"] = document_type
         if source:
             conditions.append("source = :source")
             params["source"] = source
@@ -393,7 +503,8 @@ async def list_documents(
                 f"""
                 SELECT id, title, description, source, category, tags,
                        file_type, file_size, storage_key, file_url,
-                       created_at, updated_at
+                       created_at, updated_at, document_type,
+                       meeting_id, project_id
                 FROM knowledge_document
                 WHERE {where_clause}
                 ORDER BY created_at DESC NULLS LAST
@@ -408,18 +519,34 @@ async def list_documents(
             params,
         ).scalar_one()
 
-        docs = [_with_presigned_url(_row_to_doc(r)) for r in rows]
-        return KnowledgeDocumentList(documents=docs, total=total)
+        if rows:
+            docs = [_with_presigned_url(_row_to_doc(r)) for r in rows]
+            return KnowledgeDocumentList(documents=docs, total=total)
+
+        # DB query succeeded but returned no rows, fallback to in-process docs.
+        # This covers recent uploads when DB insert failed in the same runtime.
+        mock_docs = _filter_mock_docs(
+            document_type=document_type,
+            source=source,
+            category=category,
+            meeting_id=meeting_id,
+            project_id=project_id,
+        )
+        mock_docs = [_with_presigned_url(d) for d in mock_docs]
+        return KnowledgeDocumentList(
+            documents=mock_docs[skip:skip + limit],
+            total=len(mock_docs),
+        )
     except Exception as exc:
+        db.rollback()
         logger.warning("List documents fallback to mock: %s", exc)
-        docs = list(_mock_knowledge_docs.values())
-        if document_type:
-            docs = [d for d in docs if d.document_type == document_type]
-        if source:
-            docs = [d for d in docs if d.source == source]
-        if category:
-            docs = [d for d in docs if d.category == category]
-        docs.sort(key=lambda x: x.uploaded_at, reverse=True)
+        docs = _filter_mock_docs(
+            document_type=document_type,
+            source=source,
+            category=category,
+            meeting_id=meeting_id,
+            project_id=project_id,
+        )
         docs = [_with_presigned_url(d) for d in docs]
         return KnowledgeDocumentList(
             documents=docs[skip:skip + limit],
@@ -435,7 +562,8 @@ async def get_document(db: Session, document_id: UUID) -> Optional[KnowledgeDocu
                 """
                 SELECT id, title, description, source, category, tags,
                        file_type, file_size, storage_key, file_url,
-                       created_at, updated_at
+                       created_at, updated_at, document_type,
+                       meeting_id, project_id
                 FROM knowledge_document
                 WHERE id = :id
                 """
@@ -503,6 +631,8 @@ async def upload_document(
     
     doc = KnowledgeDocument(
         id=doc_id,
+        meeting_id=data.meeting_id,
+        project_id=data.project_id,
         title=data.title,
         description=data.description,
         document_type=data.document_type,
@@ -526,17 +656,18 @@ async def upload_document(
     # Persist metadata to DB
     doc_persisted = False
     try:
+        _ensure_knowledge_document_schema(db)
         db.execute(
             text(
                 """
                 INSERT INTO knowledge_document (
-                    id, title, description, source, category, tags,
+                    id, title, description, document_type, source, category, tags,
                     file_type, file_size, storage_key, file_url,
                     org_id, project_id, meeting_id, visibility,
                     created_at, updated_at
                 )
                 VALUES (
-                    :id, :title, :description, :source, :category, :tags,
+                    :id, :title, :description, :document_type, :source, :category, :tags,
                     :file_type, :file_size, :storage_key, :file_url,
                     :org_id, :project_id, :meeting_id, :visibility,
                     now(), now()
@@ -548,6 +679,7 @@ async def upload_document(
                 "id": str(doc_id),
                 "title": doc.title,
                 "description": doc.description,
+                "document_type": doc.document_type,
                 "source": doc.source,
                 "category": doc.category,
                 "tags": doc.tags,
@@ -564,6 +696,7 @@ async def upload_document(
         db.commit()
         doc_persisted = True
     except Exception as exc:
+        db.rollback()
         logger.error("Failed to persist knowledge_document to DB: %s", exc)
 
     # Auto-embed and store chunks if HF is available
