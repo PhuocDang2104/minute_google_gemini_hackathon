@@ -34,6 +34,80 @@ WINDOW_CHAR_OVERLAP = 200
 MAX_WINDOWS = 12
 
 
+def _table_exists(db: Session, table_name: str) -> bool:
+    try:
+        result = db.execute(
+            text("SELECT to_regclass(:table_name)"),
+            {"table_name": f"public.{table_name}"},
+        ).scalar()
+        return bool(result)
+    except Exception:
+        return False
+
+
+def _ensure_minutes_tables(db: Session) -> None:
+    """
+    Safety net for cloud environments stamped/migrated inconsistently.
+    Keeps minutes generation usable even if migration was skipped.
+    """
+    if not _table_exists(db, "meeting_minutes"):
+        db.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS meeting_minutes (
+                    id UUID PRIMARY KEY,
+                    meeting_id UUID NOT NULL REFERENCES meeting(id) ON DELETE CASCADE,
+                    version INTEGER NOT NULL DEFAULT 1,
+                    minutes_text TEXT,
+                    minutes_html TEXT,
+                    minutes_markdown TEXT,
+                    minutes_doc_url TEXT,
+                    executive_summary TEXT,
+                    generated_at TIMESTAMPTZ DEFAULT now(),
+                    edited_by UUID REFERENCES user_account(id) ON DELETE SET NULL,
+                    edited_at TIMESTAMPTZ,
+                    status VARCHAR NOT NULL DEFAULT 'draft',
+                    approved_by UUID REFERENCES user_account(id) ON DELETE SET NULL,
+                    approved_at TIMESTAMPTZ
+                );
+                """
+            )
+        )
+        db.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_meeting_minutes_meeting_id ON meeting_minutes(meeting_id);"
+            )
+        )
+
+    if not _table_exists(db, "minutes_distribution_log"):
+        db.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS minutes_distribution_log (
+                    id UUID PRIMARY KEY,
+                    minutes_id UUID NOT NULL REFERENCES meeting_minutes(id) ON DELETE CASCADE,
+                    meeting_id UUID NOT NULL REFERENCES meeting(id) ON DELETE CASCADE,
+                    channel VARCHAR NOT NULL,
+                    recipient_email VARCHAR,
+                    user_id UUID REFERENCES user_account(id) ON DELETE SET NULL,
+                    sent_at TIMESTAMPTZ DEFAULT now(),
+                    status VARCHAR NOT NULL DEFAULT 'sent',
+                    error_message TEXT,
+                    created_at TIMESTAMPTZ DEFAULT now(),
+                    updated_at TIMESTAMPTZ DEFAULT now()
+                );
+                """
+            )
+        )
+        db.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_minutes_distribution_log_meeting_id ON minutes_distribution_log(meeting_id);"
+            )
+        )
+
+    db.commit()
+
+
 def _chunk_text(text: str, max_chars: int, overlap: int) -> Iterable[str]:
     """Chunk text into overlapping windows by character count."""
     if not text:
@@ -273,6 +347,7 @@ def _build_ai_filters(
 
 def list_minutes(db: Session, meeting_id: str) -> MeetingMinutesList:
     """List all minutes versions for a meeting"""
+    _ensure_minutes_tables(db)
     query = text("""
         SELECT 
             id::text, meeting_id::text, version, minutes_text,
@@ -311,6 +386,7 @@ def list_minutes(db: Session, meeting_id: str) -> MeetingMinutesList:
 
 def get_latest_minutes(db: Session, meeting_id: str) -> Optional[MeetingMinutesResponse]:
     """Get the latest minutes for a meeting"""
+    _ensure_minutes_tables(db)
     query = text("""
         SELECT 
             id::text, meeting_id::text, version, minutes_text,
@@ -349,6 +425,7 @@ def get_latest_minutes(db: Session, meeting_id: str) -> Optional[MeetingMinutesR
 
 def get_minutes_by_id(db: Session, minutes_id: str) -> Optional[MeetingMinutesResponse]:
     """Get minutes by ID (hydrated with rendered HTML if only markdown exists)."""
+    _ensure_minutes_tables(db)
     query = text("""
         SELECT 
             id::text, meeting_id::text, version, minutes_text,
@@ -462,6 +539,7 @@ def render_minutes_full_page(db: Session, minutes_id: str) -> str:
 
 def create_minutes(db: Session, data: MeetingMinutesCreate) -> MeetingMinutesResponse:
     """Create new meeting minutes"""
+    _ensure_minutes_tables(db)
     minutes_id = str(uuid4())
     now = datetime.utcnow()
     rendered_html = None
@@ -1215,6 +1293,7 @@ def format_minutes(
 
 def list_distribution_logs(db: Session, meeting_id: str) -> DistributionLogList:
     """List distribution logs for a meeting"""
+    _ensure_minutes_tables(db)
     query = text("""
         SELECT 
             id::text, minutes_id::text, meeting_id::text,
@@ -1247,6 +1326,7 @@ def list_distribution_logs(db: Session, meeting_id: str) -> DistributionLogList:
 
 def create_distribution_log(db: Session, data: DistributionLogCreate) -> DistributionLogResponse:
     """Create a distribution log entry"""
+    _ensure_minutes_tables(db)
     log_id = str(uuid4())
     now = datetime.utcnow()
     

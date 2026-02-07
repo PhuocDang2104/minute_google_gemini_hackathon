@@ -1,6 +1,7 @@
 """
 Minutes Template Service
 """
+from datetime import datetime
 from typing import Optional, List
 from uuid import UUID
 from sqlalchemy.orm import Session
@@ -14,6 +15,76 @@ from app.schemas.minutes_template import (
 )
 
 
+DEFAULT_TEMPLATE_ID = "00000000-0000-0000-0000-000000000101"
+DEFAULT_TEMPLATE_CODE = "default-meeting"
+DEFAULT_TEMPLATE_STRUCTURE = {
+    "sections": [
+        {"id": "summary", "title": "Executive Summary", "order": 1},
+        {"id": "key_points", "title": "Key Points", "order": 2},
+        {"id": "action_items", "title": "Action Items", "order": 3},
+        {"id": "decisions", "title": "Decisions", "order": 4},
+        {"id": "risks", "title": "Risks", "order": 5},
+        {"id": "next_steps", "title": "Next Steps", "order": 6},
+    ]
+}
+
+
+def _minutes_template_table_exists(db: Session) -> bool:
+    result = db.execute(
+        text("SELECT to_regclass('public.minutes_template')")
+    ).scalar()
+    return bool(result)
+
+
+def _default_template() -> MinutesTemplateResponse:
+    now = datetime.utcnow()
+    return MinutesTemplateResponse(
+        id=DEFAULT_TEMPLATE_ID,
+        name="Default Meeting Template",
+        code=DEFAULT_TEMPLATE_CODE,
+        description="Fallback template when minutes_template table is unavailable.",
+        structure=DEFAULT_TEMPLATE_STRUCTURE,
+        sample_data=None,
+        meeting_types=None,
+        is_default=True,
+        is_active=True,
+        version=1,
+        created_by=None,
+        created_at=now,
+        updated_by=None,
+        updated_at=now,
+        parent_template_id=None,
+    )
+
+
+def _fallback_templates(
+    meeting_type: Optional[str],
+    is_active: Optional[bool],
+    skip: int,
+    limit: int,
+) -> MinutesTemplateList:
+    template = _default_template()
+    templates: List[MinutesTemplateResponse] = []
+
+    if is_active is False:
+        return MinutesTemplateList(templates=[], total=0)
+
+    if meeting_type and template.meeting_types:
+        if meeting_type not in template.meeting_types:
+            return MinutesTemplateList(templates=[], total=0)
+
+    templates.append(template)
+    sliced = templates[skip : skip + limit]
+    return MinutesTemplateList(templates=sliced, total=len(templates))
+
+
+def _require_minutes_template_table(db: Session) -> None:
+    if not _minutes_template_table_exists(db):
+        raise RuntimeError(
+            "minutes_template table does not exist. Run migration: `cd backend && PYTHONPATH=. alembic upgrade head`"
+        )
+
+
 def list_templates(
     db: Session,
     meeting_type: Optional[str] = None,
@@ -22,6 +93,9 @@ def list_templates(
     limit: int = 100,
 ) -> MinutesTemplateList:
     """List all templates"""
+    if not _minutes_template_table_exists(db):
+        return _fallback_templates(meeting_type, is_active, skip, limit)
+
     query = """
         SELECT 
             id::text, name, code, description, structure, sample_data,
@@ -46,8 +120,12 @@ def list_templates(
     params['limit'] = limit
     params['skip'] = skip
     
-    result = db.execute(text(query), params)
-    rows = result.fetchall()
+    try:
+        result = db.execute(text(query), params)
+        rows = result.fetchall()
+    except Exception:
+        db.rollback()
+        return _fallback_templates(meeting_type, is_active, skip, limit)
     
     templates = []
     for row in rows:
@@ -79,13 +157,23 @@ def list_templates(
         count_query += " AND (:meeting_type = ANY(meeting_types) OR meeting_types IS NULL)"
         count_params['meeting_type'] = meeting_type
     
-    total = db.execute(text(count_query), count_params).scalar()
+    try:
+        total = db.execute(text(count_query), count_params).scalar()
+    except Exception:
+        db.rollback()
+        return _fallback_templates(meeting_type, is_active, skip, limit)
     
     return MinutesTemplateList(templates=templates, total=total)
 
 
 def get_template(db: Session, template_id: str) -> Optional[MinutesTemplateResponse]:
     """Get a single template by ID"""
+    if not _minutes_template_table_exists(db):
+        default_tpl = _default_template()
+        if template_id in {DEFAULT_TEMPLATE_ID, DEFAULT_TEMPLATE_CODE}:
+            return default_tpl
+        return None
+
     query = text("""
         SELECT 
             id::text, name, code, description, structure, sample_data,
@@ -123,6 +211,12 @@ def get_template(db: Session, template_id: str) -> Optional[MinutesTemplateRespo
 
 def get_template_by_code(db: Session, code: str) -> Optional[MinutesTemplateResponse]:
     """Get template by code"""
+    if not _minutes_template_table_exists(db):
+        default_tpl = _default_template()
+        if code == default_tpl.code:
+            return default_tpl
+        return None
+
     query = text("""
         SELECT 
             id::text, name, code, description, structure, sample_data,
@@ -160,6 +254,9 @@ def get_template_by_code(db: Session, code: str) -> Optional[MinutesTemplateResp
 
 def get_default_template(db: Session) -> Optional[MinutesTemplateResponse]:
     """Get the default template"""
+    if not _minutes_template_table_exists(db):
+        return _default_template()
+
     query = text("""
         SELECT 
             id::text, name, code, description, structure, sample_data,
@@ -202,6 +299,8 @@ def create_template(db: Session, data: MinutesTemplateCreate) -> MinutesTemplate
     from datetime import datetime
     import json
     
+    _require_minutes_template_table(db)
+
     template_id = str(uuid4())
     now = datetime.utcnow()
     
@@ -254,6 +353,8 @@ def update_template(
     from datetime import datetime
     import json
     
+    _require_minutes_template_table(db)
+
     update_fields = []
     params = {'template_id': template_id, 'updated_at': datetime.utcnow()}
     
@@ -318,6 +419,8 @@ def update_template(
 
 def delete_template(db: Session, template_id: str) -> bool:
     """Delete a template"""
+    _require_minutes_template_table(db)
+
     query = text("DELETE FROM minutes_template WHERE id = :template_id")
     result = db.execute(query, {'template_id': template_id})
     db.commit()
@@ -327,6 +430,8 @@ def delete_template(db: Session, template_id: str) -> bool:
 
 def set_default_template(db: Session, template_id: str) -> Optional[MinutesTemplateResponse]:
     """Set a template as default"""
+    _require_minutes_template_table(db)
+
     # Unset other defaults
     db.execute(text("UPDATE minutes_template SET is_default = FALSE WHERE is_default = TRUE"))
     
@@ -343,4 +448,3 @@ def set_default_template(db: Session, template_id: str) -> Optional[MinutesTempl
         return None
     
     return get_template(db, template_id)
-
