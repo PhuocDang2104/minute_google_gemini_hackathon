@@ -34,6 +34,12 @@ export interface GenerateMinutesRequest {
   include_actions?: boolean;
   include_decisions?: boolean;
   include_risks?: boolean;
+  prompt_strategy?: 'context_json' | 'structured_json';
+  session_type?: 'meeting' | 'course';
+  include_topic_tracker?: boolean;
+  include_ai_filters?: boolean;
+  include_quiz?: boolean;
+  include_knowledge_table?: boolean;
   format?: 'markdown' | 'html' | 'text';
 }
 
@@ -123,4 +129,3 @@ export const minutesApi = {
 };
 
 export default minutesApi;
-

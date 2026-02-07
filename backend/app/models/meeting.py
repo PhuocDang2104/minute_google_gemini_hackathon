@@ -40,10 +40,12 @@ class Meeting(Base, UUIDMixin, TimestampMixin):
     # New Relationships
     recap_segments = relationship("app.models.timeline.RecapSegment", back_populates="meeting", cascade="all, delete-orphan")
     visual_events = relationship("app.models.timeline.VisualEvent", back_populates="meeting", cascade="all, delete-orphan")
+    visual_object_events = relationship("app.models.timeline.VisualObjectEvent", back_populates="meeting", cascade="all, delete-orphan")
     context_windows = relationship("app.models.timeline.ContextWindow", back_populates="meeting", cascade="all, delete-orphan")
     summaries = relationship("app.models.summary.MeetingSummary", back_populates="meeting", cascade="all, delete-orphan")
     chat_sessions = relationship("app.models.chat_session.ChatSession", back_populates="meeting", cascade="all, delete-orphan")
     recordings = relationship("app.models.meeting_recording.MeetingRecording", back_populates="meeting", cascade="all, delete-orphan")
+    knowledge_documents = relationship("app.models.knowledge.KnowledgeDocument", back_populates="meeting", cascade="all, delete-orphan")
 
 
 class MeetingParticipant(Base):

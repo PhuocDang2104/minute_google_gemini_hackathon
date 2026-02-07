@@ -26,6 +26,27 @@ class VisualEvent(Base, UUIDMixin, TimestampMixin):
     event_type = Column(String)  # slide_change, screen_share, whiteboard, code
     
     meeting = relationship("Meeting", back_populates="visual_events")
+    objects = relationship("VisualObjectEvent", back_populates="visual_event", cascade="all, delete-orphan")
+
+
+class VisualObjectEvent(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "visual_object_event"
+
+    meeting_id = Column(UUID(as_uuid=True), ForeignKey("meeting.id", ondelete="CASCADE"), nullable=False)
+    visual_event_id = Column(UUID(as_uuid=True), ForeignKey("visual_event.id", ondelete="SET NULL"), nullable=True)
+    timestamp = Column(Float, nullable=False)
+    time_end = Column(Float, nullable=True)
+    object_label = Column(String, nullable=False)
+    object_type = Column(String, nullable=True)
+    bbox = Column(JSON, nullable=True)  # {"x":0.1,"y":0.2,"w":0.3,"h":0.4}
+    confidence = Column(Float, nullable=True)
+    attributes = Column(JSON, nullable=True)  # detector-specific metadata
+    ocr_text = Column(Text, nullable=True)
+    frame_url = Column(String, nullable=True)
+    source = Column(String, nullable=True)  # detector name / model
+
+    meeting = relationship("Meeting", back_populates="visual_object_events")
+    visual_event = relationship("VisualEvent", back_populates="objects")
 
 
 class ContextWindow(Base, UUIDMixin, TimestampMixin):

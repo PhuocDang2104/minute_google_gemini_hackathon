@@ -90,6 +90,12 @@ class GenerateMinutesRequest(BaseModel):
     include_actions: bool = True
     include_decisions: bool = True
     include_risks: bool = True
+    prompt_strategy: str = "context_json"  # context_json / structured_json
+    session_type: Optional[str] = None  # meeting / course (auto-infer if None)
+    include_topic_tracker: bool = True
+    include_ai_filters: bool = True
+    include_quiz: bool = True
+    include_knowledge_table: bool = True
     format: str = "markdown"  # markdown / html / text
 
 
@@ -98,4 +104,3 @@ class DistributeMinutesRequest(BaseModel):
     meeting_id: str
     channels: List[str] = ["email"]  # email / teams / sharepoint
     recipients: Optional[List[str]] = None  # user_ids, None = all participants
-
