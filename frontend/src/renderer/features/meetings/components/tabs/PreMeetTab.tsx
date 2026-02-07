@@ -63,7 +63,7 @@ export const PreMeetTab = ({ meeting, onRefresh }: PreMeetTabProps) => {
         <div className="inmeet-column inmeet-column--side">
           <PrepStatusPanel meeting={meeting} />
           <ParticipantsPanel meeting={meeting} onRefresh={onRefresh} />
-          <DocumentsPanel meetingId={meeting.id} />
+          <DocumentsPanel meetingId={meeting.id} projectId={meeting.project_id} />
         </div>
       </div>
 
@@ -837,8 +837,15 @@ const PrepStatusPanel = ({ meeting }: { meeting: MeetingWithParticipants }) => {
         setAgendaCount(agenda.items.length);
       } catch { setAgendaCount(0); }
       try {
-        const docs = await documentsApi.listByMeeting(meeting.id);
-        setDocCount(docs.documents.length);
+        const [meetingDocs, projectDocs] = await Promise.all([
+          knowledgeApi.list({ limit: 100, meeting_id: meeting.id }),
+          meeting.project_id
+            ? knowledgeApi.list({ limit: 100, project_id: meeting.project_id })
+            : Promise.resolve({ documents: [], total: 0 }),
+        ]);
+        const unique = new Set<string>();
+        [...meetingDocs.documents, ...projectDocs.documents].forEach((doc) => unique.add(doc.id));
+        setDocCount(unique.size);
       } catch { setDocCount(0); }
     };
     loadCounts();
@@ -1028,7 +1035,7 @@ const ParticipantsPanel = ({ meeting, onRefresh }: { meeting: MeetingWithPartici
 // ============================================
 // DOCUMENTS PANEL - With drag & drop upload
 // ============================================
-const DocumentsPanel = ({ meetingId }: { meetingId: string }) => {
+const DocumentsPanel = ({ meetingId, projectId }: { meetingId: string; projectId?: string }) => {
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showUpload, setShowUpload] = useState(false);
@@ -1040,22 +1047,46 @@ const DocumentsPanel = ({ meetingId }: { meetingId: string }) => {
   const [availableDocs, setAvailableDocs] = useState<KnowledgeDocument[]>([]);
   const [isSelecting, setIsSelecting] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const isUuid = (value?: string) => !!value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+  const safeMeetingId = isUuid(meetingId) ? meetingId : undefined;
+  const safeProjectId = isUuid(projectId) ? projectId : undefined;
 
   useEffect(() => {
     loadDocuments();
-  }, [meetingId]);
+  }, [meetingId, projectId]);
 
   const loadDocuments = async () => {
     setIsLoading(true);
+    const safeList = async (params: Parameters<typeof knowledgeApi.list>[0]) => {
+      try {
+        return await knowledgeApi.list(params);
+      } catch (err) {
+        console.warn('Knowledge list failed with params:', params, err);
+        return { documents: [], total: 0 };
+      }
+    };
     try {
-      const result = await knowledgeApi.list({ limit: 20, meeting_id: meetingId });
-      // preload available docs for selection
-      const allDocs = await knowledgeApi.list({ limit: 50 });
-      const meetingScopedDocs = allDocs.documents.filter((doc) => doc.meeting_id === meetingId);
+      const [meetingResult, projectResult, allDocs] = await Promise.all([
+        safeMeetingId ? safeList({ limit: 50, meeting_id: safeMeetingId }) : Promise.resolve({ documents: [], total: 0 }),
+        safeProjectId ? safeList({ limit: 50, project_id: safeProjectId }) : Promise.resolve({ documents: [], total: 0 }),
+        safeList({ limit: 100 }),
+      ]);
 
-      // Primary source: backend meeting filter.
-      // Fallback: client-side filter from all docs for older backend schema/runtime mismatches.
-      setDocuments(result.documents.length > 0 ? result.documents : meetingScopedDocs);
+      const merged = new Map<string, KnowledgeDocument>();
+      [...meetingResult.documents, ...projectResult.documents].forEach((doc) => {
+        merged.set(doc.id, doc);
+      });
+
+      // Fallback: client-side filter from all docs for schema/runtime mismatch.
+      if (merged.size === 0) {
+        allDocs.documents.forEach((doc) => {
+          if (doc.meeting_id === meetingId || (projectId && doc.project_id === projectId) || (safeProjectId && doc.project_id === safeProjectId)) {
+            merged.set(doc.id, doc);
+          }
+        });
+      }
+
+      setDocuments(Array.from(merged.values()));
       setAvailableDocs(allDocs.documents);
     } catch (err) {
       console.error('Failed to load documents:', err);
@@ -1118,7 +1149,8 @@ const DocumentsPanel = ({ meetingId }: { meetingId: string }) => {
             source: 'Meeting',
             file_type: (file.name.split('.').pop() || 'pdf'),
             file_size: file.size,
-            meeting_id: meetingId,
+            meeting_id: safeMeetingId,
+            project_id: safeProjectId,
           },
           file
         );
@@ -1336,7 +1368,10 @@ const DocumentsPanel = ({ meetingId }: { meetingId: string }) => {
                         onClick={async () => {
                           setIsSelecting(true);
                           try {
-                            await knowledgeApi.update(doc.id, { meeting_id: meetingId });
+                            await knowledgeApi.update(doc.id, {
+                              meeting_id: safeMeetingId,
+                              project_id: safeProjectId,
+                            });
                             setShowSelect(false);
                             loadDocuments();
                           } catch (err) {

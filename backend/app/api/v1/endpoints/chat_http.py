@@ -25,6 +25,7 @@ from app.schemas.chat import (
 from app.schemas.knowledge import KnowledgeQueryRequest
 from app.llm.gemini_client import GeminiChat, MeetingAIAssistant, is_gemini_available, get_llm_status
 from app.services import knowledge_service
+from app.services import summary_service
 
 router = APIRouter()
 
@@ -357,12 +358,67 @@ async def generate_summary_ai(
 ):
     """Generate meeting summary from transcript"""
     assistant = MeetingAIAssistant(request.meeting_id)
-    
+
     result = await assistant.generate_summary(request.transcript)
-    
+    summary_text = (result or "").strip()
+    persisted_id = None
+
+    if summary_text:
+        try:
+            persisted = summary_service.create_summary(
+                db,
+                meeting_id=request.meeting_id,
+                content=summary_text,
+                summary_type="chat_summary",
+                artifacts={
+                    "source": "chat_generate_summary",
+                    "transcript_chars": len(request.transcript or ""),
+                },
+            )
+            persisted_id = persisted.get("id")
+        except Exception as exc:
+            db.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to save summary: {str(exc)}")
+
     return AIGenerationResponse(
-        id=str(uuid4()),
-        result=result,
+        id=persisted_id or str(uuid4()),
+        result=summary_text,
         confidence=0.85,
         created_at=datetime.utcnow()
     )
+
+
+@router.get('/summary/{meeting_id}', response_model=dict)
+def get_latest_summary(
+    meeting_id: str,
+    summary_type: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """Get latest persisted summary for a meeting."""
+    try:
+        summary = summary_service.get_latest_summary(
+            db,
+            meeting_id=meeting_id,
+            summary_type=summary_type,
+        )
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to load summary: {str(exc)}")
+
+    if not summary:
+        return {
+            "meeting_id": meeting_id,
+            "summary": None,
+            "summary_type": summary_type or "any",
+            "message": "No summary available",
+        }
+
+    return {
+        "id": summary["id"],
+        "meeting_id": summary["meeting_id"],
+        "summary": summary["content"],
+        "version": summary["version"],
+        "summary_type": summary["summary_type"],
+        "artifacts": summary.get("artifacts"),
+        "created_at": summary["created_at"].isoformat() if summary.get("created_at") else None,
+    }

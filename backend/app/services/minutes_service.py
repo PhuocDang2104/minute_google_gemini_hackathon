@@ -579,6 +579,20 @@ def create_minutes(db: Session, data: MeetingMinutesCreate) -> MeetingMinutesRes
         'generated_at': now
     })
     db.commit()
+
+    if data.executive_summary and str(data.executive_summary).strip():
+        try:
+            from app.services.summary_service import create_summary
+            create_summary(
+                db,
+                meeting_id=str(data.meeting_id),
+                content=str(data.executive_summary),
+                summary_type="minutes_executive",
+                artifacts={"minutes_id": minutes_id, "source": "meeting_minutes"},
+            )
+        except Exception as exc:
+            logger.warning("Failed to persist executive summary for meeting %s: %s", data.meeting_id, exc)
+            db.rollback()
     
     return MeetingMinutesResponse(
         id=minutes_id,
@@ -642,6 +656,20 @@ def update_minutes(
     
     if not row:
         return None
+
+    if data.executive_summary is not None and str(data.executive_summary).strip():
+        try:
+            from app.services.summary_service import create_summary
+            create_summary(
+                db,
+                meeting_id=row[1],
+                content=str(data.executive_summary),
+                summary_type="minutes_executive",
+                artifacts={"minutes_id": minutes_id, "source": "meeting_minutes_update"},
+            )
+        except Exception as exc:
+            logger.warning("Failed to persist updated executive summary for meeting %s: %s", row[1], exc)
+            db.rollback()
     
     return get_latest_minutes(db, row[1])
 

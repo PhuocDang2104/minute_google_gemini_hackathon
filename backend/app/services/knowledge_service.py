@@ -479,6 +479,7 @@ async def list_documents(
 ) -> KnowledgeDocumentList:
     """List all knowledge documents with optional filters"""
     try:
+        has_chunk_table = _table_exists(db, "knowledge_chunk")
         conditions = ["1=1"]
         params = {"skip": skip, "limit": limit}
         if document_type:
@@ -491,10 +492,38 @@ async def list_documents(
             conditions.append("category = :category")
             params["category"] = category
         if meeting_id:
-            conditions.append("meeting_id = :meeting_id")
+            if has_chunk_table:
+                conditions.append(
+                    """
+                    (
+                        meeting_id = :meeting_id
+                        OR id IN (
+                            SELECT document_id
+                            FROM knowledge_chunk
+                            WHERE scope_meeting = :meeting_id
+                        )
+                    )
+                    """
+                )
+            else:
+                conditions.append("meeting_id = :meeting_id")
             params["meeting_id"] = str(meeting_id)
         if project_id:
-            conditions.append("project_id = :project_id")
+            if has_chunk_table:
+                conditions.append(
+                    """
+                    (
+                        project_id = :project_id
+                        OR id IN (
+                            SELECT document_id
+                            FROM knowledge_chunk
+                            WHERE scope_project = :project_id
+                        )
+                    )
+                    """
+                )
+            else:
+                conditions.append("project_id = :project_id")
             params["project_id"] = str(project_id)
 
         where_clause = " AND ".join(conditions)
@@ -761,6 +790,7 @@ async def upload_document(
             db.commit()
     except Exception as exc:
         logger.error("Auto-embed failed: %s", exc, exc_info=True)
+        db.rollback()
     
     return KnowledgeDocumentUploadResponse(
         id=doc_id,

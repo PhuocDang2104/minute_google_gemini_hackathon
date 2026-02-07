@@ -69,7 +69,21 @@ export const aiApi = {
       transcript,
     });
   },
+
+  getLatestSummary: async (meetingId: string, summaryType?: string): Promise<{
+    id?: string;
+    meeting_id: string;
+    summary: string | null;
+    version?: number;
+    summary_type?: string;
+    artifacts?: Record<string, unknown>;
+    created_at?: string;
+    message?: string;
+  }> => {
+    return api.get(`/chat/summary/${meetingId}`, {
+      summary_type: summaryType,
+    });
+  },
 };
 
 export default aiApi;
-

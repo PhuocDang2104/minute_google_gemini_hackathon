@@ -18,6 +18,7 @@ from . import (
     video_service,
     template_service,
     asr_service,
+    summary_service,
 )
 
 __all__ = [
@@ -37,4 +38,5 @@ __all__ = [
     'video_service',
     'template_service',
     'asr_service',
+    'summary_service',
 ]

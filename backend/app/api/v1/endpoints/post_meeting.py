@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.schemas.minutes import GenerateMinutesRequest, DistributeMinutesRequest
-from app.services import minutes_service, action_item_service, participant_service
+from app.services import minutes_service, action_item_service, participant_service, summary_service
 
 router = APIRouter()
 
@@ -21,6 +21,20 @@ def get_meeting_summary(
     """Get executive summary for a meeting"""
     minutes = minutes_service.get_latest_minutes(db, meeting_id)
     if not minutes:
+        cached = summary_service.get_latest_summary(
+            db,
+            meeting_id=meeting_id,
+            summary_type="minutes_executive",
+        )
+        if cached:
+            return {
+                "meeting_id": meeting_id,
+                "summary": cached.get("content"),
+                "status": "cached",
+                "version": cached.get("version"),
+                "summary_type": cached.get("summary_type"),
+                "generated_at": cached.get("created_at").isoformat() if cached.get("created_at") else None,
+            }
         return {
             "meeting_id": meeting_id,
             "summary": None,
