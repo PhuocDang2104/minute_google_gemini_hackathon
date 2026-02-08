@@ -1,19 +1,21 @@
 import asyncio
-import inspect
 import json
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from collections import defaultdict
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from sqlalchemy import text
 
 from app.core.realtime_security import verify_audio_ingest_token
+from app.db.session import SessionLocal
 from app.llm.chains.in_meeting_chain import summarize_and_classify
 from app.schemas.realtime import AudioStartMessage
 from app.services.realtime_bus import session_bus
 from app.services.realtime_ingest import ingestTranscript
+from app.services.realtime_av_service import realtime_av_service
 from app.services.realtime_session_store import FinalTranscriptChunk, session_store
-from app.services.smartvoice_streaming import SmartVoiceStreamingConfig, is_smartvoice_configured, stream_recognize
 
 router = APIRouter()
 stream_workers: Dict[str, asyncio.Task] = {}
@@ -23,25 +25,6 @@ RECAP_WINDOW_SEC = 60.0
 ROLLING_RETENTION_SEC = 120.0
 RECAP_TICK_SEC = 30.0
 RECAP_WINDOW_MIN = 30.0
-
-
-class _AudioClock:
-    def __init__(self, sample_rate_hz: int, channels: int, bytes_per_sample: int = 2) -> None:
-        self.sample_rate_hz = sample_rate_hz
-        self.channels = channels
-        self.bytes_per_sample = bytes_per_sample
-        self.total_samples = 0
-
-    def advance(self, byte_len: int) -> None:
-        if byte_len <= 0 or self.sample_rate_hz <= 0 or self.channels <= 0:
-            return
-        samples = byte_len // (self.bytes_per_sample * self.channels)
-        self.total_samples += max(0, int(samples))
-
-    def now_s(self) -> float:
-        if self.sample_rate_hz <= 0:
-            return 0.0
-        return float(self.total_samples) / float(self.sample_rate_hz)
 
 
 def _format_chunk_line(chunk: FinalTranscriptChunk) -> str:
@@ -351,59 +334,214 @@ async def _safe_send_json(websocket: WebSocket, lock: asyncio.Lock, payload: Dic
         await websocket.send_json(payload)
 
 
-async def _smartvoice_to_bus(
+def _build_transcript_event_compat_from_record(
     session_id: str,
-    audio_queue: "asyncio.Queue[Optional[bytes]]",
-    cfg: SmartVoiceStreamingConfig,
-    audio_clock: _AudioClock,
-    websocket: WebSocket,
-    send_lock: asyncio.Lock,
-) -> None:
-    last_end = 0.0
+    event: Dict[str, Any],
+    timeline_origin_ms: Optional[int],
+) -> Tuple[Optional[int], List[Dict[str, Any]]]:
+    payload = event.get("payload") or {}
+    record_start_ts_ms = payload.get("record_start_ts_ms")
     try:
-        stream_iter = stream_recognize(audio_queue, cfg)
-        if inspect.isawaitable(stream_iter):
-            stream_iter = await stream_iter
-        if not hasattr(stream_iter, "__aiter__"):
-            raise TypeError("stream_recognize must return an async iterator")
-        async for res in stream_iter:
-            time_end = res.time_end if res.time_end is not None else audio_clock.now_s()
-            time_start = res.time_start if res.time_start is not None else last_end
-            if time_end < time_start:
-                time_end = time_start
-            last_end = time_end
+        record_start_ts_ms = int(record_start_ts_ms) if record_start_ts_ms is not None else None
+    except (TypeError, ValueError):
+        record_start_ts_ms = None
 
-            transcript_payload: Dict[str, Any] = {
-                "meeting_id": session_id,
-                "chunk": res.text,
-                "speaker": res.speaker or "SPEAKER_01",
-                "time_start": float(time_start),
-                "time_end": float(time_end),
-                "is_final": bool(res.is_final),
-                "confidence": float(res.confidence),
-                "lang": res.lang or "vi",
-                "question": False,
-            }
-            try:
-                await ingestTranscript(session_id, transcript_payload, source="smartvoice_stt")
-            except Exception:
-                pass
-    except asyncio.CancelledError:
-        raise
-    except Exception as exc:
-        logger.exception("smartvoice stream failed (session_id=%s)", session_id)
+    if record_start_ts_ms is not None:
+        timeline_origin_ms = (
+            record_start_ts_ms
+            if timeline_origin_ms is None
+            else min(timeline_origin_ms, record_start_ts_ms)
+        )
+    if timeline_origin_ms is None:
+        timeline_origin_ms = int(time.time() * 1000)
+
+    bus_seq = int(event.get("seq") or 0)
+    compat_events: List[Dict[str, Any]] = []
+    for idx, seg in enumerate(payload.get("segments") or []):
+        if not isinstance(seg, dict):
+            continue
         try:
-            await _safe_send_json(
-                websocket,
-                send_lock,
-                {
-                    "event": "error",
-                    "session_id": session_id,
-                    "message": f"smartvoice_error: {exc}",
+            start_ts_ms = int(seg.get("start_ts_ms")) if seg.get("start_ts_ms") is not None else None
+        except (TypeError, ValueError):
+            start_ts_ms = None
+        try:
+            end_ts_ms = int(seg.get("end_ts_ms")) if seg.get("end_ts_ms") is not None else None
+        except (TypeError, ValueError):
+            end_ts_ms = None
+
+        text_value = str(seg.get("text") or "").strip()
+        if not text_value:
+            continue
+        time_start = max(0.0, float((start_ts_ms or timeline_origin_ms) - timeline_origin_ms) / 1000.0)
+        time_end = max(0.0, float((end_ts_ms or start_ts_ms or timeline_origin_ms) - timeline_origin_ms) / 1000.0)
+        compat_events.append(
+            {
+                "event": "transcript_event",
+                "seq": bus_seq * 1000 + idx,
+                "payload": {
+                    "meeting_id": session_id,
+                    "chunk": text_value,
+                    "speaker": str(seg.get("speaker") or "SPEAKER_01"),
+                    "time_start": time_start,
+                    "time_end": time_end,
+                    "is_final": True,
+                    "confidence": float(seg.get("confidence") or 1.0),
+                    "lang": "vi",
                 },
-            )
-        except Exception:
-            pass
+            }
+        )
+    return timeline_origin_ms, compat_events
+
+
+def _build_state_event_compat_from_window(event: Dict[str, Any]) -> Dict[str, Any]:
+    payload = event.get("payload") or {}
+    recap_items = payload.get("recap") or []
+    recap_text = " ".join(
+        str(item.get("text") or "").strip()
+        for item in recap_items
+        if isinstance(item, dict) and str(item.get("text") or "").strip()
+    ).strip()
+    topics = payload.get("topics") or []
+    first_topic = topics[0] if topics and isinstance(topics[0], dict) else {}
+    topic_id = str(first_topic.get("topic_id") or "T0")
+    topic_title = str(first_topic.get("title") or topic_id)
+    return {
+        "event": "state",
+        "payload": {
+            "stage": "in",
+            "intent": "tick",
+            "live_recap": recap_text,
+            "recap": recap_text,
+            "current_topic_id": topic_id,
+            "topic": {"topic_id": topic_id, "title": topic_title},
+            "topic_segments": [
+                {
+                    "topic_id": topic_id,
+                    "title": topic_title,
+                    "start_t": 0.0,
+                    "end_t": 0.0,
+                }
+            ],
+            "actions": [],
+            "decisions": [],
+            "risks": [],
+            "debug_info": {
+                "window_id": payload.get("window_id"),
+                "revision": payload.get("revision"),
+            },
+        },
+    }
+
+
+def _parse_record_id_from_seg_id(seg_id: str) -> Optional[int]:
+    if not seg_id:
+        return None
+    parts = str(seg_id).split(":")
+    for part in parts:
+        if part.startswith("r") and part[1:].isdigit():
+            try:
+                return int(part[1:])
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+def _load_transcript_record_replay_events(session_id: str) -> List[Dict[str, Any]]:
+    """Replay-safe transcript hydration for frontend reconnects/page reloads."""
+    db = SessionLocal()
+    try:
+        rows = db.execute(
+            text(
+                """
+                SELECT
+                    seg_id, speaker, "offset", start_ts_ms, end_ts_ms, text, confidence, record_id
+                FROM transcript_segment
+                WHERE session_id = :session_id
+                ORDER BY start_ts_ms ASC, seg_id ASC
+                """
+            ),
+            {"session_id": session_id},
+        ).fetchall()
+    except Exception:
+        db.rollback()
+        logger.debug("transcript_replay_load_failed session_id=%s", session_id, exc_info=True)
+        return []
+    finally:
+        db.close()
+
+    if not rows:
+        return []
+
+    grouped: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
+    bounds: Dict[int, Tuple[int, int]] = {}
+    for row in rows:
+        seg_id = str(row[0] or "")
+        speaker = str(row[1] or "SPEAKER_01")
+        offset = str(row[2] or "00:00")
+        try:
+            start_ts_ms = int(row[3]) if row[3] is not None else 0
+        except (TypeError, ValueError):
+            start_ts_ms = 0
+        try:
+            end_ts_ms = int(row[4]) if row[4] is not None else None
+        except (TypeError, ValueError):
+            end_ts_ms = None
+        text_value = str(row[5] or "").strip()
+        if not text_value:
+            continue
+        try:
+            confidence = float(row[6]) if row[6] is not None else 1.0
+        except (TypeError, ValueError):
+            confidence = 1.0
+        rid_raw = row[7]
+        try:
+            record_id = int(rid_raw) if rid_raw is not None else None
+        except (TypeError, ValueError):
+            record_id = None
+        if record_id is None:
+            record_id = _parse_record_id_from_seg_id(seg_id)
+        if record_id is None:
+            record_id = 0
+
+        grouped[record_id].append(
+            {
+                "seg_id": seg_id,
+                "speaker": speaker,
+                "offset": offset,
+                "start_ts_ms": start_ts_ms,
+                "end_ts_ms": end_ts_ms,
+                "text": text_value,
+                "confidence": max(0.0, min(confidence, 1.0)),
+            }
+        )
+        seg_end = end_ts_ms if end_ts_ms is not None else start_ts_ms
+        if record_id in bounds:
+            current_start, current_end = bounds[record_id]
+            bounds[record_id] = (min(current_start, start_ts_ms), max(current_end, seg_end))
+        else:
+            bounds[record_id] = (start_ts_ms, seg_end)
+
+    replay_events: List[Dict[str, Any]] = []
+    for record_id in sorted(grouped.keys()):
+        segments = grouped.get(record_id) or []
+        if not segments:
+            continue
+        record_start_ts_ms, record_end_ts_ms = bounds.get(record_id, (segments[0]["start_ts_ms"], segments[-1]["start_ts_ms"]))
+        replay_events.append(
+            {
+                "event": "transcript_record_ready",
+                "payload": {
+                    "record_id": record_id,
+                    "record_start_ts_ms": int(record_start_ts_ms),
+                    "record_end_ts_ms": int(max(record_end_ts_ms, record_start_ts_ms)),
+                    "uri": None,
+                    "segments": segments,
+                    "asr_error": None,
+                    "replay": True,
+                },
+            }
+        )
+    return replay_events
 
 
 @router.websocket("/audio/{session_id}")
@@ -413,22 +551,13 @@ async def audio_ingest(websocket: WebSocket, session_id: str):
         await websocket.close(code=1008)
         return
 
-    session = session_store.get(session_id)
-    if not session:
-        await websocket.accept()
-        await websocket.send_json(
-            {
-                "event": "error",
-                "session_id": session_id,
-                "message": "Session not found. Create it via POST /api/v1/sessions first.",
-            }
-        )
-        await websocket.close(code=1008)
-        return
+    # Keep ingest resilient across backend restarts: recreate in-memory session on demand.
+    session = session_store.ensure(session_id)
 
     await websocket.accept()
     await websocket.send_json({"event": "connected", "channel": "audio", "session_id": session_id})
     send_lock = asyncio.Lock()
+    realtime_av_service.ensure_session(session_id, meeting_id=session_id)
     _ensure_stream_worker(session_id)
 
     try:
@@ -466,14 +595,6 @@ async def audio_ingest(websocket: WebSocket, session_id: str):
         await websocket.close(code=1003)
         return
 
-    stt_param = (websocket.query_params.get("stt") or "").strip().lower()
-    if stt_param in {"0", "false", "off", "no"}:
-        stt_enabled = False
-    elif stt_param in {"1", "true", "on", "yes"}:
-        stt_enabled = True
-    else:
-        stt_enabled = is_smartvoice_configured()
-
     await _safe_send_json(
         websocket,
         send_lock,
@@ -485,42 +606,20 @@ async def audio_ingest(websocket: WebSocket, session_id: str):
                 "sample_rate_hz": expected.sample_rate_hz,
                 "channels": expected.channels,
             },
-            "stt_enabled": stt_enabled,
+            "stt_enabled": True,
+            "stt_mode": "batch_asr_record",
+            "record_ms": int(realtime_av_service.record_ms),
         },
     )
-
-    audio_queue: asyncio.Queue[Optional[bytes]] | None = None
-    audio_clock = _AudioClock(sample_rate_hz=expected.sample_rate_hz, channels=expected.channels)
-    stt_task: asyncio.Task | None = None
-    if stt_enabled:
-        audio_queue = asyncio.Queue(maxsize=50)
-        stt_cfg = SmartVoiceStreamingConfig(
-            language_code=start_msg.language_code or session.config.language_code,
-            sample_rate_hz=expected.sample_rate_hz,
-            interim_results=session.config.interim_results,
-            enable_word_time_offsets=session.config.enable_word_time_offsets,
-        )
-        stt_task = asyncio.create_task(
-            _smartvoice_to_bus(session_id, audio_queue, stt_cfg, audio_clock, websocket, send_lock)
-        )
-    else:
-        try:
-            await _safe_send_json(
-                websocket,
-                send_lock,
-                {"event": "stt_disabled", "session_id": session_id, "reason": "smartvoice_not_configured_or_disabled"},
-            )
-        except Exception:
-            pass
 
     ingest_ok_sent = False
     received_bytes = 0
     received_frames = 0
+    stop_requested = False
+    last_status_push_ms = 0
 
     try:
         while True:
-            if stt_task is not None and stt_task.done():
-                break
             message = await websocket.receive()
             if message.get("type") == "websocket.disconnect":
                 break
@@ -541,20 +640,47 @@ async def audio_ingest(websocket: WebSocket, session_id: str):
                                 "received_frames": received_frames,
                             },
                         )
+                    try:
+                        result = await realtime_av_service.handle_audio_chunk_bytes(session_id, chunk)
+                    except Exception as exc:
+                        await _safe_send_json(
+                            websocket,
+                            send_lock,
+                            {
+                                "event": "error",
+                                "session_id": session_id,
+                                "message": f"audio_chunk_failed: {exc}",
+                            },
+                        )
+                        continue
 
-                    if audio_queue is not None:
-                        if audio_queue.full():
-                            suggested = min(
-                                max(start_msg.frame_ms * 2, session.config.recommended_frame_ms),
-                                session.config.max_frame_ms,
-                            )
-                            await _safe_send_json(
-                                websocket,
-                                send_lock,
-                                {"event": "throttle", "reason": "stt_backpressure", "suggested_frame_ms": suggested},
-                            )
-                        await audio_queue.put(chunk)
-                    audio_clock.advance(len(chunk))
+                    if not bool(result.get("accepted", True)):
+                        await _safe_send_json(
+                            websocket,
+                            send_lock,
+                            {
+                                "event": "error",
+                                "session_id": session_id,
+                                "message": f"audio_chunk_rejected: {result.get('reason') or 'unknown'}",
+                            },
+                        )
+                    ts_ms = int(time.time() * 1000)
+                    if received_frames == 1 or (ts_ms - last_status_push_ms) >= 1000:
+                        last_status_push_ms = ts_ms
+                        await session_bus.publish(
+                            session_id,
+                            {
+                                "event": "audio_ingest_status",
+                                "payload": {
+                                    "session_id": session_id,
+                                    "ts_ms": ts_ms,
+                                    "received_bytes": received_bytes,
+                                    "received_frames": received_frames,
+                                    "accepted": bool(result.get("accepted", True)),
+                                    "reason": result.get("reason"),
+                                },
+                            },
+                        )
                     session_store.touch(session_id)
                 continue
 
@@ -562,25 +688,18 @@ async def audio_ingest(websocket: WebSocket, session_id: str):
                 try:
                     obj = json.loads(message["text"])
                     if obj.get("type") == "stop":
+                        stop_requested = True
                         break
                 except Exception:
                     pass
     except WebSocketDisconnect:
         pass
     finally:
-        if audio_queue is not None:
+        if stop_requested or received_frames > 0:
             try:
-                audio_queue.put_nowait(None)
+                await realtime_av_service.flush_session(session_id)
             except Exception:
-                try:
-                    await audio_queue.put(None)
-                except Exception:
-                    pass
-        if stt_task is not None:
-            try:
-                await asyncio.wait_for(stt_task, timeout=5)
-            except Exception:
-                stt_task.cancel()
+                logger.warning("audio_flush_failed session_id=%s", session_id, exc_info=True)
         try:
             await websocket.close()
         except Exception:
@@ -634,6 +753,19 @@ async def in_meeting_frontend(websocket: WebSocket, session_id: str):
     await websocket.accept()
     queue = session_bus.subscribe(session_id)
     await websocket.send_json({"event": "connected", "channel": "frontend", "session_id": session_id})
+    timeline_origin_ms: Optional[int] = None
+    replay_events = _load_transcript_record_replay_events(session_id)
+    if replay_events:
+        logger.info("frontend_transcript_replay session_id=%s records=%s", session_id, len(replay_events))
+    for replay_event in replay_events:
+        await websocket.send_json(replay_event)
+        timeline_origin_ms, compat_events = _build_transcript_event_compat_from_record(
+            session_id=session_id,
+            event=replay_event,
+            timeline_origin_ms=timeline_origin_ms,
+        )
+        for compat_event in compat_events:
+            await websocket.send_json(compat_event)
     try:
         while True:
             try:
@@ -649,6 +781,20 @@ async def in_meeting_frontend(websocket: WebSocket, session_id: str):
                 cleaned = dict(event)
                 cleaned["payload"] = payload
                 await websocket.send_json(cleaned)
+            elif event.get("event") == "transcript_record_ready":
+                # Keep new contract and emit compatibility transcript_event entries.
+                await websocket.send_json(event)
+                timeline_origin_ms, compat_events = _build_transcript_event_compat_from_record(
+                    session_id=session_id,
+                    event=event,
+                    timeline_origin_ms=timeline_origin_ms,
+                )
+                for compat_event in compat_events:
+                    await websocket.send_json(compat_event)
+            elif event.get("event") == "recap_window_ready":
+                # Keep new contract and emit compatibility state update.
+                await websocket.send_json(event)
+                await websocket.send_json(_build_state_event_compat_from_window(event))
             else:
                 await websocket.send_json(event)
     except WebSocketDisconnect:

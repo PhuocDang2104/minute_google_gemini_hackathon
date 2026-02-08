@@ -288,6 +288,9 @@ Core endpoints:
 - `WS /api/v1/ws/audio/{id}?token=...` - raw audio ingress (PCM S16LE 16kHz)
 - `WS /api/v1/ws/in-meeting/{id}` - dev/test transcript ingest
 - `WS /api/v1/ws/frontend/{id}` - live transcript + state for UI
+- `WS /api/v1/ws/realtime-av/{id}` - unified realtime AV ingest (audio_chunk + video_frame_meta + recap/Q&A events)
+- `GET /api/v1/realtime-av/sessions/{id}/snapshot` - realtime AV session state snapshot
+- `PUT /api/v1/realtime-av/sessions/{id}/roi` - update ROI for slide-change detection
 - `POST /api/v1/rag/query` / `POST /api/v1/knowledge/query` - RAG Q&A
 - `POST /api/v1/transcripts/{meeting_id}/chunks` - ingest transcript chunks
 - `POST /api/v1/minutes/generate` - minutes generation
@@ -381,6 +384,7 @@ Script sẽ:
 ## Docs
 - SAAR spec: `docs/MeetMate _ SAAR – Self-aware Adaptive Agentic RAG.md`
 - Realtime flow: `docs/in_meeting_flow.md`, `docs/real_time_transcript.md`
+- Realtime AV (minute ASR + slide detection + capture + recap windows): `docs/implementation/REALTIME_AV_MINUTE_PIPELINE.md`
 - API contracts: `docs/api_contracts.md`, `docs/gomeet_control_api_spec.md`
 - Transcript ingest: `docs/transcript_ingest_api.md`
 - RAG architecture: `docs/rag_architecture.md`, `docs/knowledge_vector_search.md`

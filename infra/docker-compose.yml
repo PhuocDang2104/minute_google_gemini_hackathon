@@ -31,6 +31,8 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       ASR_URL: ${ASR_URL:-http://asr:9000}
       PYTHONPATH: /app
+      WATCHFILES_FORCE_POLLING: "true"
+      WATCHFILES_POLL_DELAY_MS: "1000"
     volumes:
       - ../backend:/app
       - ../infra/env:/app/infra/env:ro

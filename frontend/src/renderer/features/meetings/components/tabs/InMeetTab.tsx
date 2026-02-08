@@ -9,6 +9,7 @@ import {
   FileText,
   Link as LinkIcon,
   Mic,
+  Search,
   Sparkles,
   User,
   Wand2,
@@ -17,8 +18,7 @@ import {
 import type { MeetingWithParticipants } from '../../../../shared/dto/meeting';
 import { actionItems, decisions, formatDuration, risks } from '../../../../store/mockData';
 import { API_URL, USE_API } from '../../../../config/env';
-import { sessionsApi, diarizationApi } from '../../../../lib/api';
-import { RecordingControls } from '../RecordingControls';
+import { sessionsApi } from '../../../../lib/api';
 
 type WsStatus = 'idle' | 'connecting' | 'connected' | 'error' | 'disabled';
 interface InMeetTabProps {
@@ -126,6 +126,20 @@ const formatAdrDate = (value?: string) => {
   return parsed.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
 };
 
+const parseOffsetToSeconds = (raw: unknown): number => {
+  const value = String(raw ?? '').trim();
+  if (!value) return 0;
+  const parts = value.split(':').map(part => Number(part));
+  if (parts.some(item => Number.isNaN(item) || item < 0)) return 0;
+  if (parts.length === 2) {
+    return parts[0] * 60 + parts[1];
+  }
+  if (parts.length === 3) {
+    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  }
+  return 0;
+};
+
 export const InMeetTab = ({
   meeting,
   joinPlatform,
@@ -134,6 +148,7 @@ export const InMeetTab = ({
 }: InMeetTabProps) => {
   const [feedStatus, setFeedStatus] = useState<WsStatus>(USE_API ? 'idle' : 'disabled');
   const [lastTranscriptAt, setLastTranscriptAt] = useState<number | null>(null);
+  const [lastAudioIngestAt, setLastAudioIngestAt] = useState<number | null>(null);
   const [livePartial, setLivePartial] = useState<{
     speaker: string;
     text: string;
@@ -152,9 +167,6 @@ export const InMeetTab = ({
   const [currentTopicId, setCurrentTopicId] = useState('T0');
   const [topicSegments, setTopicSegments] = useState<TopicSegmentState[]>([]);
   const [recapItems, setRecapItems] = useState<RecapItem[]>([]);
-  const [diarizationSegments, setDiarizationSegments] = useState<
-    { speaker: string; start: number; end: number; confidence?: number }[]
-  >([]);
   const [liveActions, setLiveActions] = useState<AdrAction[]>([]);
   const [liveDecisions, setLiveDecisions] = useState<AdrDecision[]>([]);
   const [liveRisks, setLiveRisks] = useState<AdrRisk[]>([]);
@@ -170,6 +182,9 @@ export const InMeetTab = ({
   const partialClearRef = useRef<number | null>(null);
   const finalClearRef = useRef<number | null>(null);
   const lastFinalTimeRef = useRef(0);
+  const timelineOriginMsRef = useRef<number | null>(null);
+  const transcriptKeySetRef = useRef<Set<string>>(new Set());
+  const hasRecordTranscriptRef = useRef(false);
   const wsBase = useMemo(() => {
     if (API_URL.startsWith('https://')) return API_URL.replace(/^https:/i, 'wss:').replace(/\/$/, '');
     if (API_URL.startsWith('http://')) return API_URL.replace(/^http:/i, 'ws:').replace(/\/$/, '');
@@ -179,24 +194,13 @@ export const InMeetTab = ({
   const feedEndpoint = useMemo(() => `${wsBase}/api/v1/ws/frontend/${sessionIdForStream}`, [wsBase, sessionIdForStream]);
 
   useEffect(() => {
-    if (!USE_API || !sessionIdForStream) return;
-    let stop = false;
-    const fetchDiarization = async () => {
-      try {
-        const res = await diarizationApi.list(sessionIdForStream);
-        if (!stop && Array.isArray(res?.segments)) {
-          setDiarizationSegments(res.segments);
-        }
-      } catch (_err) {
-        // swallow polling errors
-      }
-    };
-    fetchDiarization();
-    const id = window.setInterval(fetchDiarization, 7000);
-    return () => {
-      stop = true;
-      window.clearInterval(id);
-    };
+    setFinalTranscript([]);
+    setLastTranscriptAt(null);
+    setLastAudioIngestAt(null);
+    timelineOriginMsRef.current = null;
+    transcriptKeySetRef.current = new Set();
+    hasRecordTranscriptRef.current = false;
+    lastFinalTimeRef.current = 0;
   }, [sessionIdForStream]);
 
   const actions = useMemo<AdrAction[]>(() => {
@@ -281,13 +285,58 @@ export const InMeetTab = ({
       const raw = typeof event.data === 'string' ? event.data : '';
       try {
         const data = JSON.parse(raw);
-        if (data?.event === 'transcript_event') {
+        if (data?.event === 'transcript_record_ready') {
+          const p = data.payload || {};
+          const recordStartTsMs = Number(p.record_start_ts_ms);
+          if (Number.isFinite(recordStartTsMs)) {
+            timelineOriginMsRef.current =
+              timelineOriginMsRef.current == null
+                ? recordStartTsMs
+                : Math.min(timelineOriginMsRef.current, recordStartTsMs);
+          }
+          const timelineOriginMs = timelineOriginMsRef.current ?? (Number.isFinite(recordStartTsMs) ? recordStartTsMs : Date.now());
+          const segs = Array.isArray(p.segments) ? p.segments : [];
+          const entries: { id: string; speaker: string; text: string; time: number }[] = [];
+          for (const seg of segs) {
+            if (!seg || typeof seg !== 'object') continue;
+            const text = String(seg.text || '').trim();
+            if (!text) continue;
+            const speaker = String(seg.speaker || 'SPEAKER_01');
+            const segId = String(seg.seg_id || '');
+            const startTsMs = Number(seg.start_ts_ms);
+            const time =
+              Number.isFinite(startTsMs)
+                ? Math.max(0, (startTsMs - timelineOriginMs) / 1000)
+                : parseOffsetToSeconds(seg.offset);
+            const key = segId
+              ? `seg:${segId}`
+              : `seg:${speaker}:${time.toFixed(2)}:${text.slice(0, 64)}`;
+            if (transcriptKeySetRef.current.has(key)) continue;
+            transcriptKeySetRef.current.add(key);
+            entries.push({
+              id: segId || key,
+              speaker,
+              text,
+              time,
+            });
+          }
+          if (entries.length > 0) {
+            hasRecordTranscriptRef.current = true;
+            setLastTranscriptAt(Date.now());
+            lastFinalTimeRef.current = entries[entries.length - 1].time || lastFinalTimeRef.current;
+            setFinalTranscript(prev =>
+              [...prev, ...entries]
+                .sort((a, b) => (a.time === b.time ? a.id.localeCompare(b.id) : a.time - b.time))
+                .slice(-400),
+            );
+          }
+        } else if (data?.event === 'transcript_event') {
           const p = data.payload || {};
           setLastTranscriptAt(Date.now());
-          const text = (p.chunk || '').trim();
+          const text = String(p.chunk || '').trim();
           const isFinal = p.is_final !== false;
-          const speaker = p.speaker || 'SPEAKER_01';
-          const time = p.time_start || 0;
+          const speaker = String(p.speaker || 'SPEAKER_01');
+          const time = Number(p.time_start || 0);
           if (text) {
             if (isFinal) {
               setLiveFinal({ speaker, text, time });
@@ -308,12 +357,20 @@ export const InMeetTab = ({
               }, 1200);
             }
           }
-          if (isFinal && text) {
-            lastFinalTimeRef.current = Number(time) || 0;
-            setFinalTranscript(prev =>
-              [...prev, { id: String(data.seq || Date.now()), speaker, text, time }].slice(-120),
-            );
+          if (isFinal && text && !hasRecordTranscriptRef.current) {
+            const key = `legacy:${speaker}:${time.toFixed(2)}:${text.slice(0, 64)}`;
+            if (!transcriptKeySetRef.current.has(key)) {
+              transcriptKeySetRef.current.add(key);
+              lastFinalTimeRef.current = Number(time) || 0;
+              setFinalTranscript(prev =>
+                [...prev, { id: String(data.seq || key), speaker, text, time }]
+                  .sort((a, b) => (a.time === b.time ? a.id.localeCompare(b.id) : a.time - b.time))
+                  .slice(-400),
+              );
+            }
           }
+        } else if (data?.event === 'audio_ingest_status') {
+          setLastAudioIngestAt(Date.now());
         } else if (data?.event === 'state') {
           const p = data.payload || {};
           const intentLabel =
@@ -417,9 +474,6 @@ export const InMeetTab = ({
 
   return (
     <div className="inmeet-tab">
-      <div style={{ marginBottom: 16 }}>
-        <RecordingControls />
-      </div>
       <div className="inmeet-toggle" role="tablist" aria-label="In-meeting panels">
         <button
           type="button"
@@ -442,19 +496,11 @@ export const InMeetTab = ({
       <div className="inmeet-grid inmeet-grid--single">
         <div className="inmeet-column inmeet-column--main">
           {activePanel === 'transcript' ? (
-            <LiveTranscriptPanel
-              livePartial={livePartial}
-              liveFinal={liveFinal}
-              finalTranscriptCount={finalTranscript.length}
+            <RealtimeTranscriptPanel
               finalTranscript={finalTranscript}
-              diarizationSegments={diarizationSegments}
-              joinPlatform={joinPlatform}
               feedStatus={feedStatus}
               lastTranscriptAt={lastTranscriptAt}
-              audioIngestToken={audioIngestToken}
-              tokenError={tokenError}
-              isTokenLoading={isTokenLoading}
-              onFetchAudioToken={handleFetchAudioToken}
+              lastAudioIngestAt={lastAudioIngestAt}
             />
           ) : (
             <div className="inmeet-insights">
@@ -488,6 +534,7 @@ interface TranscriptPanelProps {
   joinPlatform: 'gomeet' | 'gmeet';
   feedStatus: WsStatus;
   lastTranscriptAt: number | null;
+  lastAudioIngestAt: number | null;
   audioIngestToken: string | null;
   tokenError: string | null;
   isTokenLoading: boolean;
@@ -497,9 +544,11 @@ interface TranscriptPanelProps {
 const AudioStreamIndicator = ({
   feedStatus,
   lastTranscriptAt,
+  lastAudioIngestAt,
 }: {
   feedStatus: WsStatus;
   lastTranscriptAt: number | null;
+  lastAudioIngestAt: number | null;
 }) => {
   const [tick, setTick] = useState(() => Date.now());
 
@@ -510,26 +559,27 @@ const AudioStreamIndicator = ({
 
   const status = useMemo(() => {
     if (feedStatus === 'error') {
-      return { tone: 'error', label: 'WS lỗi', hint: 'Frontend channel không phản hồi' };
+      return { tone: 'error', label: 'Nhận audio · lỗi', hint: 'Frontend channel không phản hồi' };
     }
     if (feedStatus === 'connecting' || feedStatus === 'idle') {
-      return { tone: 'idle', label: 'Đang kết nối...', hint: 'Đợi bắt tay WebSocket' };
+      return { tone: 'idle', label: 'Nhận audio · đang kết nối', hint: 'Đợi bắt tay WebSocket' };
     }
     if (feedStatus === 'disabled') {
-      return { tone: 'idle', label: 'API tắt', hint: 'USE_API=false' };
+      return { tone: 'idle', label: 'Nhận audio · API tắt', hint: 'USE_API=false' };
     }
-    if (!lastTranscriptAt) {
-      return { tone: 'idle', label: 'Chưa nhận audio', hint: 'Chờ frame đầu tiên' };
+    const lastSignalAt = Math.max(lastTranscriptAt ?? 0, lastAudioIngestAt ?? 0) || null;
+    if (!lastSignalAt) {
+      return { tone: 'idle', label: 'Nhận audio · chờ tín hiệu', hint: 'Chờ frame đầu tiên' };
     }
-    const delta = tick - lastTranscriptAt;
+    const delta = tick - lastSignalAt;
     if (delta < 6000) {
-      return { tone: 'live', label: 'Đang nhận audio', hint: 'Frame realtime từ WS' };
+      return { tone: 'live', label: 'Nhận audio · đang nhận', hint: 'Frame realtime từ WS' };
     }
     if (delta < 15000) {
-      return { tone: 'warn', label: 'Tạm ngưng luồng', hint: 'Chưa thấy frame mới' };
+      return { tone: 'warn', label: 'Nhận audio · chậm', hint: 'Chưa thấy frame mới' };
     }
-    return { tone: 'idle', label: 'Không có audio', hint: 'Kiểm tra GoMeet/Meet' };
-  }, [feedStatus, lastTranscriptAt, tick]);
+    return { tone: 'idle', label: 'Nhận audio · ngắt', hint: 'Kiểm tra GoMeet/Meet' };
+  }, [feedStatus, lastAudioIngestAt, lastTranscriptAt, tick]);
 
   return (
     <div className={`audio-indicator audio-indicator--${status.tone}`} title={status.hint}>
@@ -555,6 +605,7 @@ const LiveTranscriptPanel = ({
   joinPlatform,
   feedStatus,
   lastTranscriptAt,
+  lastAudioIngestAt,
   audioIngestToken,
   tokenError,
   isTokenLoading,
@@ -584,17 +635,21 @@ const LiveTranscriptPanel = ({
 
   const recentFinal = useMemo(() => finalTranscript.slice(-10).reverse(), [finalTranscript]);
   const recentDiarization = useMemo(() => diarizationSegments.slice(-8).reverse(), [diarizationSegments]);
+  const lastAudioSignalAt = useMemo(
+    () => Math.max(lastTranscriptAt ?? 0, lastAudioIngestAt ?? 0) || null,
+    [lastAudioIngestAt, lastTranscriptAt],
+  );
   const lastFrameLabel = useMemo(() => {
     if (feedStatus === 'error') return 'Frontend WS lỗi - thử kết nối lại';
     if (feedStatus === 'connecting' || feedStatus === 'idle') return 'Đang chờ bắt tay WebSocket';
     if (feedStatus === 'disabled') return 'Realtime WS đang tắt (USE_API=false)';
-    if (!lastTranscriptAt) return 'Chưa nhận frame audio nào';
-    return `Frame cuối: ${new Date(lastTranscriptAt).toLocaleTimeString('vi-VN', {
+    if (!lastAudioSignalAt) return 'Chưa nhận frame audio nào';
+    return `Frame cuối: ${new Date(lastAudioSignalAt).toLocaleTimeString('vi-VN', {
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
     })}`;
-  }, [feedStatus, lastTranscriptAt]);
+  }, [feedStatus, lastAudioSignalAt]);
   const partialText = livePartial?.text || 'Đang lắng nghe...';
   const finalText = liveFinal?.text || 'Chưa có final transcript.';
 
@@ -614,7 +669,11 @@ const LiveTranscriptPanel = ({
                     <Clock size={12} />
                     Context cửa sổ 60s
                   </div>
-                  <AudioStreamIndicator feedStatus={feedStatus} lastTranscriptAt={lastTranscriptAt} />
+                  <AudioStreamIndicator
+                    feedStatus={feedStatus}
+                    lastTranscriptAt={lastTranscriptAt}
+                    lastAudioIngestAt={lastAudioIngestAt}
+                  />
                 </div>
               </div>
             </div>
@@ -659,7 +718,7 @@ const LiveTranscriptPanel = ({
                 <div className="transcript-live-card__title">
                   <div className="pill pill--live pill--solid">
                     <span className="live-dot"></span>
-                    SmartVoice API ...
+                    Batch ASR / 30s ...
                   </div>
                   <span className="pill pill--ghost">Realtime transcript</span>
                 </div>
@@ -729,7 +788,7 @@ const LiveTranscriptPanel = ({
 
             <div className="transcript-mini-status">
               <span className={`pill ws-chip ws-chip--${feedStatus}`}>
-                Frontend WS · {feedStatus}
+                Audio status · {feedStatus}
               </span>
               <span className="transcript-mini-status__meta">{lastFrameLabel}</span>
             </div>
@@ -758,6 +817,101 @@ const LiveTranscriptPanel = ({
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const RealtimeTranscriptPanel = ({
+  finalTranscript,
+  feedStatus,
+  lastTranscriptAt,
+  lastAudioIngestAt,
+}: {
+  finalTranscript: { id: string; speaker: string; text: string; time: number }[];
+  feedStatus: WsStatus;
+  lastTranscriptAt: number | null;
+  lastAudioIngestAt: number | null;
+}) => {
+  const [searchInTranscript, setSearchInTranscript] = useState('');
+  const orderedTranscripts = useMemo(
+    () => [...finalTranscript].sort((a, b) => (a.time === b.time ? a.id.localeCompare(b.id) : a.time - b.time)),
+    [finalTranscript],
+  );
+  const filteredTranscripts = useMemo(() => {
+    const keyword = searchInTranscript.trim().toLowerCase();
+    if (!keyword) return orderedTranscripts;
+    return orderedTranscripts.filter(chunk => chunk.text.toLowerCase().includes(keyword));
+  }, [orderedTranscripts, searchInTranscript]);
+
+  const highlightText = (text: string) => {
+    const keyword = searchInTranscript.trim();
+    if (!keyword) return text;
+    const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(${escaped})`, 'ig');
+    const needle = keyword.toLowerCase();
+    return text.split(regex).map((part, idx) =>
+      part.toLowerCase() === needle ? <mark key={`${part}-${idx}`}>{part}</mark> : <span key={`${part}-${idx}`}>{part}</span>,
+    );
+  };
+
+  return (
+    <div className="transcript-panel transcript-panel--glass">
+      <div className="transcript-grid transcript-grid--single">
+        <div className="transcript-col transcript-col--main">
+          <div className="fireflies-right-header">
+            <h3 className="fireflies-right-title">
+              <span></span>
+              Transcript
+            </h3>
+            <div className="fireflies-search fireflies-search--sm">
+              <div className="fireflies-search__icon">
+                <Search size={14} />
+              </div>
+              <input
+                className="fireflies-search__input"
+                placeholder="Search across the transcript"
+                value={searchInTranscript}
+                onChange={e => setSearchInTranscript(e.target.value)}
+              />
+            </div>
+            <div style={{ marginTop: 10, width: '100%' }}>
+              <AudioStreamIndicator
+                feedStatus={feedStatus}
+                lastTranscriptAt={lastTranscriptAt}
+                lastAudioIngestAt={lastAudioIngestAt}
+              />
+            </div>
+          </div>
+
+          <div className="fireflies-transcript-list">
+            {filteredTranscripts.length === 0 ? (
+              <div className="fireflies-empty">
+                <p>Chưa có transcript nào.</p>
+              </div>
+            ) : (
+              filteredTranscripts.map(chunk => {
+                const matchesSearch =
+                  searchInTranscript.trim().length > 0 &&
+                  chunk.text.toLowerCase().includes(searchInTranscript.trim().toLowerCase());
+                return (
+                  <div key={chunk.id} className={`fireflies-transcript-item ${matchesSearch ? 'highlight' : ''}`}>
+                    <div className="fireflies-transcript-header">
+                      <div className="fireflies-speaker">
+                        <div className="fireflies-speaker-avatar">
+                          {chunk.speaker ? chunk.speaker.charAt(0).toUpperCase() : 'S'}
+                        </div>
+                        <span className="fireflies-speaker-name">{chunk.speaker || 'SPEAKER_01'}</span>
+                      </div>
+                      <span className="fireflies-timestamp">{formatDuration(Math.max(0, Math.floor(chunk.time || 0)))}</span>
+                    </div>
+                    <div className="fireflies-transcript-text">{highlightText(chunk.text)}</div>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
       </div>
