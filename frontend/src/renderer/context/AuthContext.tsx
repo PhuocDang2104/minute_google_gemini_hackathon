@@ -113,6 +113,7 @@ export function useAuth() {
 export function RequireAuth({ children }: { children: ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
   const navigate = useNavigate();
+  const language = typeof window !== 'undefined' && localStorage.getItem('minute_language') === 'en' ? 'en' : 'vi';
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -124,7 +125,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
     return (
       <div className="loading-screen">
         <div className="loading-spinner"></div>
-        <p>Đang tải...</p>
+        <p>{language === 'en' ? 'Loading...' : 'Đang tải...'}</p>
       </div>
     );
   }
@@ -135,4 +136,3 @@ export function RequireAuth({ children }: { children: ReactNode }) {
 
   return <>{children}</>;
 }
-

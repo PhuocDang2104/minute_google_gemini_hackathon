@@ -16,14 +16,16 @@ import {
 import { meetingsApi } from '../../../lib/api/meetings';
 import { sessionsApi } from '../../../lib/api/sessions';
 import type { MeetingWithParticipants, MeetingUpdate } from '../../../shared/dto/meeting';
-import { MEETING_TYPE_LABELS } from '../../../shared/dto/meeting';
+import { getMeetingTypeLabel } from '../../../shared/dto/meeting';
 import { USE_API } from '../../../config/env';
 import { useChatContext } from '../../../contexts/ChatContext';
+import { useLocaleText } from '../../../i18n/useLocaleText';
 
 // Tab Components
 import PostMeetTabFireflies from './tabs/PostMeetTabFireflies';
 
 export const MeetingDetail = () => {
+  const { lt, language, dateLocale, timeLocale } = useLocaleText();
   const { meetingId } = useParams<{ meetingId: string }>();
   const navigate = useNavigate();
 
@@ -65,7 +67,7 @@ export const MeetingDetail = () => {
       setStreamSessionId(data.id);
     } catch (err) {
       console.error('Failed to fetch meeting:', err);
-      setError('Không thể tải thông tin cuộc họp');
+      setError(lt('Không thể tải thông tin cuộc họp', 'Unable to load meeting details'));
     } finally {
       setIsLoading(false);
     }
@@ -135,7 +137,7 @@ export const MeetingDetail = () => {
       openMeetingDock({ sessionId, token });
     } catch (err) {
       console.error('Failed to init realtime session:', err);
-      setSessionInitError('Không thể khởi tạo realtime session. Kiểm tra backend /api/v1/sessions.');
+      setSessionInitError(lt('Không thể khởi tạo realtime session. Kiểm tra backend /api/v1/sessions.', 'Unable to initialize realtime session. Check backend /api/v1/sessions.'));
     } finally {
       setIsInitSessionLoading(false);
     }
@@ -183,7 +185,7 @@ export const MeetingDetail = () => {
       fetchMeeting();
     } catch (err) {
       console.error('Failed to update meeting:', err);
-      alert('Không thể cập nhật cuộc họp');
+      alert(lt('Không thể cập nhật cuộc họp', 'Unable to update meeting'));
     } finally {
       setIsSaving(false);
     }
@@ -199,7 +201,7 @@ export const MeetingDetail = () => {
       navigate('/app/meetings');
     } catch (err) {
       console.error('Failed to delete meeting:', err);
-      alert('Không thể xóa cuộc họp');
+      alert(lt('Không thể xóa cuộc họp', 'Unable to delete meeting'));
     } finally {
       setIsDeleting(false);
       setShowDeleteConfirm(false);
@@ -210,7 +212,7 @@ export const MeetingDetail = () => {
     return (
       <div className="meeting-detail-loading">
         <div className="spinner" style={{ width: 40, height: 40 }}></div>
-        <p>Đang tải thông tin cuộc họp...</p>
+        <p>{lt('Đang tải thông tin cuộc họp...', 'Loading meeting details...')}</p>
       </div>
     );
   }
@@ -219,9 +221,9 @@ export const MeetingDetail = () => {
     return (
       <div className="empty-state">
         <AlertCircle className="empty-state__icon" />
-        <h3 className="empty-state__title">{error || 'Không tìm thấy cuộc họp'}</h3>
+        <h3 className="empty-state__title">{error || lt('Không tìm thấy cuộc họp', 'Meeting not found')}</h3>
         <button className="btn btn--secondary" onClick={() => navigate('/app/meetings')}>
-          Quay lại
+          {lt('Quay lại', 'Back')}
         </button>
       </div>
     );
@@ -244,7 +246,7 @@ export const MeetingDetail = () => {
           </button>
           <div className="meeting-detail-v2__header-info">
             <div className="meeting-detail-v2__header-badges">
-              <span className="badge badge--neutral">{MEETING_TYPE_LABELS[meeting.meeting_type as keyof typeof MEETING_TYPE_LABELS] || meeting.meeting_type}</span>
+              <span className="badge badge--neutral">{getMeetingTypeLabel(meeting.meeting_type, language)}</span>
             </div>
             <h1 className="meeting-detail-v2__title">{meeting.title}</h1>
           </div>
@@ -256,11 +258,11 @@ export const MeetingDetail = () => {
               <>
                 <span className="meta-item">
                   <Calendar size={14} />
-                  {startTime.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}
+                  {startTime.toLocaleDateString(dateLocale, { day: '2-digit', month: '2-digit' })}
                 </span>
                 <span className="meta-item">
                   <Clock size={14} />
-                  {startTime.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                  {startTime.toLocaleTimeString(timeLocale, { hour: '2-digit', minute: '2-digit' })}
                 </span>
               </>
             )}
@@ -273,7 +275,7 @@ export const MeetingDetail = () => {
                 className="btn btn--ghost btn--icon btn--sm"
                 style={{ padding: '6px', width: '32px', height: '32px' }}
                 onClick={fetchMeeting}
-                title="Làm mới"
+                title={lt('Làm mới', 'Refresh')}
               >
                 <RefreshCw size={16} />
               </button>
@@ -282,7 +284,7 @@ export const MeetingDetail = () => {
                   className="btn btn--ghost btn--icon btn--sm"
                   style={{ padding: '6px', width: '32px', height: '32px' }}
                   onClick={handleOpenEdit}
-                  title="Chỉnh sửa"
+                  title={lt('Chỉnh sửa', 'Edit')}
                 >
                   <Edit2 size={16} />
                 </button>
@@ -292,7 +294,7 @@ export const MeetingDetail = () => {
                   className="btn btn--ghost btn--icon btn--sm"
                   style={{ padding: '6px', width: '32px', height: '32px', color: 'var(--error)' }}
                   onClick={() => setShowDeleteConfirm(true)}
-                  title="Xóa cuộc họp"
+                  title={lt('Xóa cuộc họp', 'Delete meeting')}
                 >
                   <Trash2 size={16} />
                 </button>
@@ -305,10 +307,10 @@ export const MeetingDetail = () => {
                 <button
                   className="btn btn--secondary"
                   onClick={() => setShowJoinModal(true)}
-                  title="Mở dock để live record"
+                  title={lt('Mở dock để ghi realtime', 'Open dock for realtime capture')}
                 >
                   <Video size={16} />
-                  Live Record
+                  {lt('Live Record', 'Live Record')}
                 </button>
               </div>
             )}
@@ -331,7 +333,7 @@ export const MeetingDetail = () => {
             <div className="modal__header">
               <h2 className="modal__title">
                 <Edit2 size={20} />
-                Chỉnh sửa cuộc họp
+                {lt('Chỉnh sửa cuộc họp', 'Edit meeting')}
               </h2>
               <button className="btn btn--ghost btn--icon" onClick={() => setShowEditModal(false)}>
                 <X size={20} />
@@ -340,23 +342,23 @@ export const MeetingDetail = () => {
 
             <div className="modal__body">
               <div className="form-group">
-                <label className="form-label">Tiêu đề cuộc họp</label>
+                <label className="form-label">{lt('Tiêu đề cuộc họp', 'Meeting title')}</label>
                 <input
                   type="text"
                   className="form-input"
                   value={editForm.title}
                   onChange={e => setEditForm({ ...editForm, title: e.target.value })}
-                  placeholder="Nhập tiêu đề..."
+                  placeholder={lt('Nhập tiêu đề...', 'Enter title...')}
                 />
               </div>
 
               <div className="form-group">
-                <label className="form-label">Mô tả</label>
+                <label className="form-label">{lt('Mô tả', 'Description')}</label>
                 <textarea
                   className="form-input"
                   value={editForm.description}
                   onChange={e => setEditForm({ ...editForm, description: e.target.value })}
-                  placeholder="Nhập mô tả..."
+                  placeholder={lt('Nhập mô tả...', 'Enter description...')}
                   rows={3}
                 />
               </div>
@@ -365,7 +367,7 @@ export const MeetingDetail = () => {
                 <div className="form-group">
                   <label className="form-label">
                     <Clock size={14} style={{ marginRight: '6px' }} />
-                    Thời gian bắt đầu
+                    {lt('Thời gian bắt đầu', 'Start time')}
                   </label>
                   <input
                     type="datetime-local"
@@ -378,7 +380,7 @@ export const MeetingDetail = () => {
                 <div className="form-group">
                   <label className="form-label">
                     <Clock size={14} style={{ marginRight: '6px' }} />
-                    Thời gian kết thúc
+                    {lt('Thời gian kết thúc', 'End time')}
                   </label>
                   <input
                     type="datetime-local"
@@ -392,7 +394,7 @@ export const MeetingDetail = () => {
               <div className="form-group">
                 <label className="form-label">
                   <Video size={14} style={{ marginRight: '6px' }} />
-                  Link MS Teams
+                  {lt('Link MS Teams', 'MS Teams link')}
                 </label>
                 <input
                   type="url"
@@ -406,21 +408,21 @@ export const MeetingDetail = () => {
               <div className="form-group">
                 <label className="form-label">
                   <MapPin size={14} style={{ marginRight: '6px' }} />
-                  Địa điểm
+                  {lt('Địa điểm', 'Location')}
                 </label>
                 <input
                   type="text"
                   className="form-input"
                   value={editForm.location}
                   onChange={e => setEditForm({ ...editForm, location: e.target.value })}
-                  placeholder="Phòng họp hoặc Online"
+                  placeholder={lt('Phòng họp hoặc Online', 'Meeting room or online')}
                 />
               </div>
             </div>
 
             <div className="modal__footer">
               <button className="btn btn--secondary" onClick={() => setShowEditModal(false)}>
-                Hủy
+                {lt('Hủy', 'Cancel')}
               </button>
               <button
                 className="btn btn--primary"
@@ -430,12 +432,12 @@ export const MeetingDetail = () => {
                 {isSaving ? (
                   <>
                     <RefreshCw size={16} className="animate-spin" />
-                    Đang lưu...
+                    {lt('Đang lưu...', 'Saving...')}
                   </>
                 ) : (
                   <>
                     <Save size={16} />
-                    Lưu thay đổi
+                    {lt('Lưu thay đổi', 'Save changes')}
                   </>
                 )}
               </button>
@@ -451,7 +453,7 @@ export const MeetingDetail = () => {
             <div className="modal__header">
               <h2 className="modal__title" style={{ color: 'var(--error)' }}>
                 <Trash2 size={20} />
-                Xóa cuộc họp
+                {lt('Xóa cuộc họp', 'Delete meeting')}
               </h2>
               <button className="btn btn--ghost btn--icon" onClick={() => setShowDeleteConfirm(false)}>
                 <X size={20} />
@@ -460,22 +462,22 @@ export const MeetingDetail = () => {
 
             <div className="modal__body">
               <p style={{ marginBottom: 'var(--space-base)' }}>
-                Bạn có chắc chắn muốn xóa cuộc họp này?
+                {lt('Bạn có chắc chắn muốn xóa cuộc họp này?', 'Are you sure you want to delete this meeting?')}
               </p>
               <div className="card" style={{ background: 'var(--bg-elevated)', padding: 'var(--space-base)' }}>
                 <strong>{meeting.title}</strong>
                 <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  {startTime?.toLocaleString('vi-VN')}
+                  {startTime?.toLocaleString(dateLocale)}
                 </div>
               </div>
               <p style={{ marginTop: 'var(--space-base)', fontSize: '13px', color: 'var(--text-muted)' }}>
-                Hành động này không thể hoàn tác.
+                {lt('Hành động này không thể hoàn tác.', 'This action cannot be undone.')}
               </p>
             </div>
 
             <div className="modal__footer">
               <button className="btn btn--secondary" onClick={() => setShowDeleteConfirm(false)}>
-                Hủy
+                {lt('Hủy', 'Cancel')}
               </button>
               <button
                 className="btn btn--error"
@@ -486,12 +488,12 @@ export const MeetingDetail = () => {
                 {isDeleting ? (
                   <>
                     <RefreshCw size={16} className="animate-spin" />
-                    Đang xóa...
+                    {lt('Đang xóa...', 'Deleting...')}
                   </>
                 ) : (
                   <>
                     <Trash2 size={16} />
-                    Xóa cuộc họp
+                    {lt('Xóa cuộc họp', 'Delete meeting')}
                   </>
                 )}
               </button>
@@ -511,7 +513,7 @@ export const MeetingDetail = () => {
                 </div>
                 <div>
                   <h2 className="modal__title">Minute Capture</h2>
-                  <p className="join-modal__subtitle">Select any other Google tab to capture.</p>
+                  <p className="join-modal__subtitle">{lt('Chọn tab Google khác để capture.', 'Select another Google tab to capture.')}</p>
                 </div>
               </div>
               <button className="btn btn--ghost btn--icon" onClick={() => setShowJoinModal(false)}>
@@ -520,18 +522,18 @@ export const MeetingDetail = () => {
             </div>
             <div className="modal__body join-modal__body">
               <div className="join-modal__notice">
-                Select any other Google tab to capture.
+                {lt('Chọn tab Google khác để capture.', 'Select another Google tab to capture.')}
               </div>
               <div className="form-group">
-                <label className="form-label">Stream ID</label>
+                <label className="form-label">{lt('Stream ID', 'Stream ID')}</label>
                 <input
                   type="text"
                   className="form-input"
                   value={sessionIdValue}
                   onChange={e => setStreamSessionId(e.target.value)}
-                  placeholder="session_id (default: meeting.id)"
+                  placeholder={lt('session_id (mặc định: meeting.id)', 'session_id (default: meeting.id)')}
                 />
-                <p className="form-hint">Stream ID is used for realtime transcript.</p>
+                <p className="form-hint">{lt('Stream ID được dùng cho realtime transcript.', 'Stream ID is used for realtime transcript.')}</p>
               </div>
               {sessionInitError && (
                 <div className="join-modal__alert join-modal__alert--error">
@@ -541,14 +543,14 @@ export const MeetingDetail = () => {
             </div>
             <div className="modal__footer join-modal__footer">
               <button className="btn btn--secondary" onClick={() => setShowJoinModal(false)}>
-                Close
+                {lt('Đóng', 'Close')}
               </button>
               <button
                 className="btn btn--primary"
                 onClick={handleInitRealtimeSession}
                 disabled={!sessionIdValue}
               >
-                {isInitSessionLoading ? 'Connecting...' : 'Connect'}
+                {isInitSessionLoading ? lt('Đang kết nối...', 'Connecting...') : lt('Kết nối', 'Connect')}
               </button>
             </div>
           </div>

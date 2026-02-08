@@ -16,6 +16,7 @@ import { usersApi } from '../../lib/api/users'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { languageNames, languageFlags, type Language } from '../../i18n'
 import type { LlmProvider } from '../../shared/dto/user'
+import { useLocaleText } from '../../i18n/useLocaleText'
 
 type NoteStyle = 'Ngắn gọn' | 'Cân bằng' | 'Chi tiết'
 type ToneStyle =
@@ -27,6 +28,38 @@ type ToneStyle =
 type ThemeMode = 'system' | 'light' | 'dark'
 type RecapInterval = 'off' | '2m' | '5m'
 type LlmModelOption = { value: string; label: string }
+
+const NOTE_STYLE_OPTIONS: { value: NoteStyle; labelVi: string; labelEn: string }[] = [
+  { value: 'Ngắn gọn', labelVi: 'Ngắn gọn', labelEn: 'Concise' },
+  { value: 'Cân bằng', labelVi: 'Cân bằng', labelEn: 'Balanced' },
+  { value: 'Chi tiết', labelVi: 'Chi tiết', labelEn: 'Detailed' },
+]
+
+const TONE_OPTIONS: { value: ToneStyle; labelVi: string; labelEn: string }[] = [
+  { value: 'Chuyên nghiệp', labelVi: 'Chuyên nghiệp', labelEn: 'Professional' },
+  { value: 'Giáo dục (giải thích rõ)', labelVi: 'Giáo dục (giải thích rõ)', labelEn: 'Educational (clear explanation)' },
+  { value: 'Thân thiện', labelVi: 'Thân thiện', labelEn: 'Friendly' },
+  { value: 'Thẳng vào vấn đề', labelVi: 'Thẳng vào vấn đề', labelEn: 'Direct' },
+  { value: 'Socratic (hỏi gợi mở)', labelVi: 'Socratic (hỏi gợi mở)', labelEn: 'Socratic (guided questions)' },
+]
+
+const normalizeNoteStyle = (value: unknown): NoteStyle => {
+  const raw = String(value || '').trim().toLowerCase()
+  if (!raw) return 'Ngắn gọn'
+  if (raw.includes('concise') || raw.includes('brief') || raw.includes('ngắn')) return 'Ngắn gọn'
+  if (raw.includes('detailed') || raw.includes('chi tiết')) return 'Chi tiết'
+  return 'Cân bằng'
+}
+
+const normalizeToneStyle = (value: unknown): ToneStyle => {
+  const raw = String(value || '').trim().toLowerCase()
+  if (!raw) return 'Chuyên nghiệp'
+  if (raw.includes('educational') || raw.includes('giáo dục')) return 'Giáo dục (giải thích rõ)'
+  if (raw.includes('friendly') || raw.includes('thân thiện')) return 'Thân thiện'
+  if (raw.includes('direct') || raw.includes('thẳng')) return 'Thẳng vào vấn đề'
+  if (raw.includes('socratic')) return 'Socratic (hỏi gợi mở)'
+  return 'Chuyên nghiệp'
+}
 
 interface UserSettings {
   personalization: {
@@ -145,6 +178,7 @@ const Settings = () => {
   const [showVisualApiKey, setShowVisualApiKey] = useState(false)
   const [clearVisualApiKey, setClearVisualApiKey] = useState(false)
   const { language, setLanguage } = useLanguage()
+  const { lt } = useLocaleText()
 
   useEffect(() => {
     try {
@@ -208,18 +242,8 @@ const Settings = () => {
           masterPrompt: response.master_prompt || '',
         })
         const behavior = response.behavior || {}
-        const nextNoteStyle = ['Ngắn gọn', 'Cân bằng', 'Chi tiết'].includes(String(behavior.note_style))
-          ? (behavior.note_style as NoteStyle)
-          : defaultSettings.personalization.noteStyle
-        const nextTone = [
-          'Chuyên nghiệp',
-          'Giáo dục (giải thích rõ)',
-          'Thân thiện',
-          'Thẳng vào vấn đề',
-          'Socratic (hỏi gợi mở)',
-        ].includes(String(behavior.tone))
-          ? (behavior.tone as ToneStyle)
-          : defaultSettings.personalization.tone
+        const nextNoteStyle = normalizeNoteStyle(behavior.note_style)
+        const nextTone = normalizeToneStyle(behavior.tone)
         setSettings(prev => ({
           ...prev,
           personalization: {
@@ -239,7 +263,7 @@ const Settings = () => {
       } catch (err) {
         if (!active) return
         console.error('Failed to load LLM settings:', err)
-        setLlmError('Không thể tải cấu hình LLM. Hãy thử lại.')
+        setLlmError(lt('Không thể tải cấu hình LLM. Hãy thử lại.', 'Unable to load LLM settings. Please try again.'))
       } finally {
         if (active) {
           setLlmLoading(false)
@@ -320,7 +344,7 @@ const Settings = () => {
       let llmSaved = true
       if (llmLoading) {
         llmSaved = false
-        setLlmError('LLM đang tải, vui lòng thử lại.')
+        setLlmError(lt('LLM đang tải, vui lòng thử lại.', 'LLM settings are loading, please try again.'))
       } else {
         try {
           const payload: {
@@ -398,21 +422,21 @@ const Settings = () => {
         } catch (err) {
           console.error('Failed to save LLM settings:', err)
           llmSaved = false
-          setLlmError('Không thể lưu cấu hình LLM. Vui lòng thử lại.')
+          setLlmError(lt('Không thể lưu cấu hình LLM. Vui lòng thử lại.', 'Unable to save LLM settings. Please try again.'))
         }
       }
 
       await new Promise(resolve => setTimeout(resolve, 400))
       if (llmSaved) {
-        setSaveMessage('Đã lưu thành công!')
+        setSaveMessage(lt('Đã lưu thành công!', 'Saved successfully!'))
         setIsDirty(false)
       } else {
-        setSaveMessage('Đã lưu cấu hình cơ bản, LLM chưa lưu.')
+        setSaveMessage(lt('Đã lưu cấu hình cơ bản, nhưng cấu hình LLM chưa được lưu.', 'Saved base settings, but LLM settings were not saved.'))
       }
       setTimeout(() => setSaveMessage(null), 3000)
     } catch (err) {
       console.error('Failed to save settings:', err)
-      setSaveMessage('Lỗi khi lưu. Vui lòng thử lại.')
+      setSaveMessage(lt('Lỗi khi lưu. Vui lòng thử lại.', 'Save failed. Please try again.'))
     } finally {
       setIsSaving(false)
     }
@@ -420,36 +444,36 @@ const Settings = () => {
 
   const apiKeyBadge = (() => {
     if (llmLoading) {
-      return { label: 'Đang tải...', color: 'var(--text-muted)', bg: 'var(--bg-surface)' }
+      return { label: lt('Đang tải...', 'Loading...'), color: 'var(--text-muted)', bg: 'var(--bg-surface)' }
     }
     if (llmSettings.apiKeyInput.trim().length > 0) {
-      return { label: 'Sẽ cập nhật khi lưu', color: 'var(--text-primary)', bg: 'var(--bg-surface-hover)' }
+      return { label: lt('Sẽ cập nhật khi lưu', 'Will update on save'), color: 'var(--text-primary)', bg: 'var(--bg-surface-hover)' }
     }
     if (clearApiKey) {
-      return { label: 'Sẽ xoá khi lưu', color: 'var(--error)', bg: 'var(--error-subtle)' }
+      return { label: lt('Sẽ xoá khi lưu', 'Will remove on save'), color: 'var(--error)', bg: 'var(--error-subtle)' }
     }
     if (llmSettings.apiKeySet) {
-      const suffix = llmSettings.apiKeyLast4 ? `•••• ${llmSettings.apiKeyLast4}` : 'Đã lưu'
+      const suffix = llmSettings.apiKeyLast4 ? `•••• ${llmSettings.apiKeyLast4}` : lt('Đã lưu', 'Saved')
       return { label: suffix, color: 'var(--success)', bg: 'var(--success-subtle)' }
     }
-    return { label: 'Chưa thiết lập', color: 'var(--text-muted)', bg: 'var(--bg-surface)' }
+    return { label: lt('Chưa thiết lập', 'Not set'), color: 'var(--text-muted)', bg: 'var(--bg-surface)' }
   })()
 
   const visualApiKeyBadge = (() => {
     if (llmLoading) {
-      return { label: 'Đang tải...', color: 'var(--text-muted)', bg: 'var(--bg-surface)' }
+      return { label: lt('Đang tải...', 'Loading...'), color: 'var(--text-muted)', bg: 'var(--bg-surface)' }
     }
     if (llmSettings.visualApiKeyInput.trim().length > 0) {
-      return { label: 'Sẽ cập nhật khi lưu', color: 'var(--text-primary)', bg: 'var(--bg-surface-hover)' }
+      return { label: lt('Sẽ cập nhật khi lưu', 'Will update on save'), color: 'var(--text-primary)', bg: 'var(--bg-surface-hover)' }
     }
     if (clearVisualApiKey) {
-      return { label: 'Sẽ xoá khi lưu', color: 'var(--error)', bg: 'var(--error-subtle)' }
+      return { label: lt('Sẽ xoá khi lưu', 'Will remove on save'), color: 'var(--error)', bg: 'var(--error-subtle)' }
     }
     if (llmSettings.visualApiKeySet) {
-      const suffix = llmSettings.visualApiKeyLast4 ? `•••• ${llmSettings.visualApiKeyLast4}` : 'Đã lưu'
+      const suffix = llmSettings.visualApiKeyLast4 ? `•••• ${llmSettings.visualApiKeyLast4}` : lt('Đã lưu', 'Saved')
       return { label: suffix, color: 'var(--success)', bg: 'var(--success-subtle)' }
     }
-    return { label: 'Chưa thiết lập', color: 'var(--text-muted)', bg: 'var(--bg-surface)' }
+    return { label: lt('Chưa thiết lập', 'Not set'), color: 'var(--text-muted)', bg: 'var(--bg-surface)' }
   })()
 
   const inputStyle = {
@@ -477,14 +501,16 @@ const Settings = () => {
     <div>
       <div className="page-header">
         <div>
-          <h1 className="page-header__title">Cài đặt</h1>
-          <p className="page-header__subtitle">Cá nhân hoá và cấu hình hệ thống</p>
+          <h1 className="page-header__title">{lt('Cài đặt', 'Settings')}</h1>
+          <p className="page-header__subtitle">{lt('Cá nhân hoá và cấu hình hệ thống', 'Personalization and system configuration')}</p>
         </div>
         <div className="page-header__actions">
           {saveMessage && (
             <span
               style={{
-                color: saveMessage.includes('thành công') ? 'var(--success)' : 'var(--error)',
+                color: (saveMessage.toLowerCase().includes('thành công') || saveMessage.toLowerCase().includes('success'))
+                  ? 'var(--success)'
+                  : 'var(--error)',
                 fontSize: 13,
                 marginRight: 'var(--space-md)',
               }}
@@ -498,7 +524,7 @@ const Settings = () => {
             disabled={isSaving || !isDirty}
           >
             {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-            Lưu thay đổi
+            {lt('Lưu thay đổi', 'Save changes')}
           </button>
         </div>
       </div>
@@ -508,21 +534,24 @@ const Settings = () => {
           <div className="card__header">
             <h3 className="card__title">
               <User size={18} className="card__title-icon" />
-              Cá nhân hoá
+              {lt('Cá nhân hoá', 'Personalization')}
             </h3>
           </div>
           <div className="card__body">
             <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 'var(--space-md)' }}>
-              Thiết lập phong cách phản hồi của MINUTE. Các thông tin này được đưa vào prompt để AI trả lời đúng ngữ cảnh sản phẩm.
+              {lt(
+                'Thiết lập phong cách phản hồi của MINUTE. Các thông tin này được đưa vào prompt để AI trả lời đúng ngữ cảnh sản phẩm.',
+                'Configure MINUTE response style. These fields are injected into prompts so AI replies fit your product context.',
+              )}
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
               <div>
                 <label style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 'var(--space-xs)', display: 'block' }}>
-                  Biệt danh
+                  {lt('Biệt danh', 'Nickname')}
                 </label>
                 <input
                   type="text"
-                  placeholder="Ví dụ: Phước (PM), Lan (Tech Lead)"
+                  placeholder={lt('Ví dụ: Phước (PM), Lan (Tech Lead)', 'e.g. Alex (PM), Sam (Tech Lead)')}
                   value={settings.personalization.nickname}
                   onChange={e => updatePersonal('nickname', e.target.value)}
                   style={inputStyle}
@@ -530,10 +559,13 @@ const Settings = () => {
               </div>
               <div>
                 <label style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 'var(--space-xs)', display: 'block' }}>
-                  Hãy kể thêm về bạn
+                  {lt('Hãy kể thêm về bạn', 'Tell us more about you')}
                 </label>
                 <textarea
-                  placeholder="Ví dụ: Mình làm PM fintech, thích output dạng bullet, ưu tiên số liệu và bằng chứng."
+                  placeholder={lt(
+                    'Ví dụ: Mình làm PM fintech, thích output dạng bullet, ưu tiên số liệu và bằng chứng.',
+                    'e.g. I am a fintech PM, prefer bullet outputs, and prioritize data with evidence.',
+                  )}
                   value={settings.personalization.about}
                   onChange={e => updatePersonal('about', e.target.value)}
                   style={textAreaStyle}
@@ -541,10 +573,13 @@ const Settings = () => {
               </div>
               <div>
                 <label style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 'var(--space-xs)', display: 'block' }}>
-                  Mô tả định hướng tương lai
+                  {lt('Mô tả định hướng tương lai', 'Future focus')}
                 </label>
                 <textarea
-                  placeholder="Ví dụ: 3-6 tháng tới cần cải thiện leadership, delivery tốc độ cao, giảm rủi ro vận hành."
+                  placeholder={lt(
+                    'Ví dụ: 3-6 tháng tới cần cải thiện leadership, delivery tốc độ cao, giảm rủi ro vận hành.',
+                    'e.g. In 3-6 months, improve leadership, faster delivery, and reduce operational risks.',
+                  )}
                   value={settings.personalization.futureFocus}
                   onChange={e => updatePersonal('futureFocus', e.target.value)}
                   style={textAreaStyle}
@@ -552,11 +587,11 @@ const Settings = () => {
               </div>
               <div>
                 <label style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 'var(--space-xs)', display: 'block' }}>
-                  Nghề nghiệp / Vai trò
+                  {lt('Nghề nghiệp / Vai trò', 'Occupation / Role')}
                 </label>
                 <input
                   type="text"
-                  placeholder="Ví dụ: Product Manager, PMO, Engineering Manager"
+                  placeholder={lt('Ví dụ: Product Manager, PMO, Engineering Manager', 'e.g. Product Manager, PMO, Engineering Manager')}
                   value={settings.personalization.role}
                   onChange={e => updatePersonal('role', e.target.value)}
                   style={inputStyle}
@@ -564,43 +599,41 @@ const Settings = () => {
               </div>
               <div>
                 <label style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 'var(--space-xs)', display: 'block' }}>
-                  Định hướng ghi chú
+                  {lt('Định hướng ghi chú', 'Note style')}
                 </label>
                 <select
                   value={settings.personalization.noteStyle}
                   onChange={e => updatePersonal('noteStyle', e.target.value as NoteStyle)}
                   style={selectStyle}
                 >
-                  {(['Ngắn gọn', 'Cân bằng', 'Chi tiết'] as NoteStyle[]).map(item => (
-                    <option key={item} value={item}>{item}</option>
+                  {NOTE_STYLE_OPTIONS.map(item => (
+                    <option key={item.value} value={item.value}>
+                      {language === 'en' ? item.labelEn : item.labelVi}
+                    </option>
                   ))}
                 </select>
               </div>
               <div>
                 <label style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 'var(--space-xs)', display: 'block' }}>
-                  Văn giọng
+                  {lt('Văn giọng', 'Tone')}
                 </label>
                 <select
                   value={settings.personalization.tone}
                   onChange={e => updatePersonal('tone', e.target.value as ToneStyle)}
                   style={selectStyle}
                 >
-                  {([
-                    'Chuyên nghiệp',
-                    'Giáo dục (giải thích rõ)',
-                    'Thân thiện',
-                    'Thẳng vào vấn đề',
-                    'Socratic (hỏi gợi mở)',
-                  ] as ToneStyle[]).map(item => (
-                    <option key={item} value={item}>{item}</option>
+                  {TONE_OPTIONS.map(item => (
+                    <option key={item.value} value={item.value}>
+                      {language === 'en' ? item.labelEn : item.labelVi}
+                    </option>
                   ))}
                 </select>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>Trích dẫn & bằng chứng</div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{lt('Trích dẫn & bằng chứng', 'Citations & evidence')}</div>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                    Luôn kèm timestamp/tài liệu khi có
+                    {lt('Luôn kèm timestamp/tài liệu khi có', 'Always include timestamp/document evidence when available')}
                   </div>
                 </div>
                 <Toggle
@@ -616,23 +649,23 @@ const Settings = () => {
           <div className="card__header">
             <h3 className="card__title">
               <SettingsIcon size={18} className="card__title-icon" />
-              Thiết lập hệ thống
+              {lt('Thiết lập hệ thống', 'System settings')}
             </h3>
           </div>
           <div className="card__body">
             <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 'var(--space-md)' }}>
-              Cấu hình model, khóa API và các tính năng AI trong phiên/post-session.
+              {lt('Cấu hình model, khóa API và các tính năng AI trong phiên/post-session.', 'Configure models, API keys, and AI features for in-session/post-session flow.')}
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
               <div>
                 <label style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 'var(--space-xs)', display: 'block' }}>
-                  Giao diện
+                  {lt('Giao diện', 'Theme')}
                 </label>
                 <div style={{ display: 'flex', gap: 8 }}>
                   {([
-                    { value: 'light', label: 'Sáng' },
-                    { value: 'dark', label: 'Tối' },
-                    { value: 'system', label: 'Theo hệ thống' },
+                    { value: 'light', label: lt('Sáng', 'Light') },
+                    { value: 'dark', label: lt('Tối', 'Dark') },
+                    { value: 'system', label: lt('Theo hệ thống', 'System') },
                   ] as { value: ThemeMode; label: string }[]).map(option => (
                     <button
                       key={option.value}
@@ -656,21 +689,21 @@ const Settings = () => {
               </div>
               <div>
                 <label style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 'var(--space-xs)', display: 'block' }}>
-                  Recap trong phiên
+                  {lt('Recap trong phiên', 'In-session recap')}
                 </label>
                 <select
                   value={settings.system.recapInterval}
                   onChange={e => updateSystem('recapInterval', e.target.value as RecapInterval)}
                   style={selectStyle}
                 >
-                  <option value="off">Tắt</option>
-                  <option value="2m">2 phút</option>
-                  <option value="5m">5 phút</option>
+                  <option value="off">{lt('Tắt', 'Off')}</option>
+                  <option value="2m">{lt('2 phút', '2 minutes')}</option>
+                  <option value="5m">{lt('5 phút', '5 minutes')}</option>
                 </select>
               </div>
               <div>
                 <label style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 'var(--space-xs)', display: 'block' }}>
-                  Cấu hình model
+                  {lt('Cấu hình model', 'LLM model configuration')}
                 </label>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <select
@@ -700,12 +733,12 @@ const Settings = () => {
               </div>
               <div>
                 <label style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 'var(--space-xs)', display: 'block' }}>
-                  LLM API key của riêng bạn
+                  {lt('LLM API key của riêng bạn', 'Your LLM API key')}
                 </label>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <input
                     type={showApiKey ? 'text' : 'password'}
-                    placeholder="Nhập API key (không lưu trên trình duyệt)"
+                    placeholder={lt('Nhập API key (không lưu trên trình duyệt)', 'Enter API key (not stored in browser)')}
                     value={llmSettings.apiKeyInput}
                     onChange={e => {
                       updateLlm('apiKeyInput', e.target.value)
@@ -729,7 +762,7 @@ const Settings = () => {
                     }}
                     disabled={!llmSettings.apiKeySet}
                   >
-                    Xoá key
+                    {lt('Xoá key', 'Remove key')}
                   </button>
                   <span
                     style={{
@@ -747,7 +780,7 @@ const Settings = () => {
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6, display: 'flex', gap: 6, alignItems: 'center' }}>
                   <KeyRound size={12} />
-                  API key được mã hoá và chỉ lưu trên server. Không lưu vào localStorage.
+                  {lt('API key được mã hoá và chỉ lưu trên server. Không lưu vào localStorage.', 'API key is encrypted and stored only on server. Never stored in localStorage.')}
                 </div>
                 {llmError && (
                   <div style={{ fontSize: 11, color: 'var(--error)', marginTop: 6 }}>
@@ -757,7 +790,7 @@ const Settings = () => {
               </div>
               <div style={{ borderTop: '1px solid var(--border)', paddingTop: 'var(--space-md)' }}>
                 <label style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 'var(--space-xs)', display: 'block' }}>
-                  Visual model (video/frame understanding)
+                  {lt('Visual model (video/frame understanding)', 'Visual model (video/frame understanding)')}
                 </label>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <select
@@ -771,8 +804,8 @@ const Settings = () => {
                     }}
                     style={{ ...selectStyle, flex: 1 }}
                   >
-                    <option value="gemini">Google Gemini (Vision)</option>
-                    <option value="groq">Groq (Vision)</option>
+                    <option value="gemini">{lt('Google Gemini (Vision)', 'Google Gemini (Vision)')}</option>
+                    <option value="groq">{lt('Groq (Vision)', 'Groq (Vision)')}</option>
                   </select>
                   <select
                     value={llmSettings.visualModel}
@@ -785,17 +818,17 @@ const Settings = () => {
                   </select>
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
-                  Dùng cho pipeline ảnh/video (slide/frame caption), tách riêng khỏi chatbot để giảm hallucination.
+                  {lt('Dùng cho pipeline ảnh/video (slide/frame caption), tách riêng khỏi chatbot để giảm hallucination.', 'Used for image/video pipeline (slide/frame caption), separated from chatbot to reduce hallucination.')}
                 </div>
               </div>
               <div>
                 <label style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 'var(--space-xs)', display: 'block' }}>
-                  Visual API key (riêng)
+                  {lt('Visual API key (riêng)', 'Visual API key (separate)')}
                 </label>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <input
                     type={showVisualApiKey ? 'text' : 'password'}
-                    placeholder="Nhập API key cho vision model"
+                    placeholder={lt('Nhập API key cho vision model', 'Enter API key for vision model')}
                     value={llmSettings.visualApiKeyInput}
                     onChange={e => {
                       updateLlm('visualApiKeyInput', e.target.value)
@@ -819,7 +852,7 @@ const Settings = () => {
                     }}
                     disabled={!llmSettings.visualApiKeySet}
                   >
-                    Xoá key
+                    {lt('Xoá key', 'Remove key')}
                   </button>
                   <span
                     style={{
@@ -838,26 +871,29 @@ const Settings = () => {
               </div>
               <div>
                 <label style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 'var(--space-xs)', display: 'block' }}>
-                  Master prompt cho AI
+                  {lt('Master prompt cho AI', 'Master prompt for AI')}
                 </label>
                 <textarea
-                  placeholder="Ví dụ: Luôn trả lời theo format Executive Summary -> Decision Table -> Action Table (owner/deadline/priority). Bắt buộc trích dẫn transcript/tài liệu/timecode; nếu thiếu dữ liệu phải nêu rõ và đề xuất câu hỏi tiếp theo."
+                  placeholder={lt(
+                    'Ví dụ: Luôn trả lời theo format Executive Summary -> Decision Table -> Action Table (owner/deadline/priority). Bắt buộc trích dẫn transcript/tài liệu/timecode; nếu thiếu dữ liệu phải nêu rõ và đề xuất câu hỏi tiếp theo.',
+                    'e.g. Always answer in format Executive Summary -> Decision Table -> Action Table (owner/deadline/priority). Must cite transcript/doc/timecode; if evidence is missing, state it and suggest follow-up questions.',
+                  )}
                   value={llmSettings.masterPrompt}
                   onChange={e => updateLlm('masterPrompt', e.target.value)}
                   style={{ ...textAreaStyle, minHeight: '120px' }}
                 />
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
-                  Prompt này được ghép vào system prompt cho chatbot/tóm tắt và lưu trên server. Nên mô tả rõ format đầu ra để demo hackathon nhất quán.
+                  {lt('Prompt này được ghép vào system prompt cho chatbot/tóm tắt và lưu trên server. Nên mô tả rõ format đầu ra để demo hackathon nhất quán.', 'This prompt is appended to system prompt for chatbot/summary and stored on server. Define output format clearly for consistent hackathon demos.')}
                 </div>
               </div>
 
               <div style={{ marginTop: 'var(--space-sm)' }}>
-                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Tính năng AI</div>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>{lt('Tính năng AI', 'AI Features')}</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-base)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div>
-                      <div style={{ fontSize: 13, fontWeight: 500 }}>Tính năng AI</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Bật/tắt toàn bộ AI trong ứng dụng</div>
+                      <div style={{ fontSize: 13, fontWeight: 500 }}>{lt('Tính năng AI', 'AI Features')}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lt('Bật/tắt toàn bộ AI trong ứng dụng', 'Enable/disable all AI features in the app')}</div>
                     </div>
                     <Toggle
                       checked={settings.system.aiEnabled}
@@ -866,8 +902,8 @@ const Settings = () => {
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div>
-                      <div style={{ fontSize: 13, fontWeight: 500 }}>Tự động tóm tắt</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Tạo summary sau phiên</div>
+                      <div style={{ fontSize: 13, fontWeight: 500 }}>{lt('Tự động tóm tắt', 'Auto summary')}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lt('Tạo summary sau phiên', 'Generate summary after session')}</div>
                     </div>
                     <Toggle
                       checked={settings.system.ai.autoSummary}
@@ -876,8 +912,8 @@ const Settings = () => {
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div>
-                      <div style={{ fontSize: 13, fontWeight: 500 }}>Gợi ý tài liệu để đính kèm</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Đề xuất docs liên quan theo nội dung</div>
+                      <div style={{ fontSize: 13, fontWeight: 500 }}>{lt('Gợi ý tài liệu để đính kèm', 'Suggest related documents')}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lt('Đề xuất docs liên quan theo nội dung', 'Recommend related docs from context')}</div>
                     </div>
                     <Toggle
                       checked={settings.system.ai.documentSuggestions}
@@ -886,8 +922,8 @@ const Settings = () => {
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div>
-                      <div style={{ fontSize: 13, fontWeight: 500 }}>Phát hiện action items</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Trích xuất task/owner/deadline (gợi ý)</div>
+                      <div style={{ fontSize: 13, fontWeight: 500 }}>{lt('Phát hiện action items', 'Action item detection')}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lt('Trích xuất task/owner/deadline (gợi ý)', 'Extract task/owner/deadline (suggested)')}</div>
                     </div>
                     <Toggle
                       checked={settings.system.ai.actionItemDetection}
@@ -896,8 +932,8 @@ const Settings = () => {
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div>
-                      <div style={{ fontSize: 13, fontWeight: 500 }}>Live recap</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Cập nhật recap theo thời gian thực</div>
+                      <div style={{ fontSize: 13, fontWeight: 500 }}>{lt('Live recap', 'Live recap')}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lt('Cập nhật recap theo thời gian thực', 'Update recap in real-time')}</div>
                     </div>
                     <Toggle
                       checked={settings.system.ai.liveRecap}
@@ -906,8 +942,8 @@ const Settings = () => {
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div>
-                      <div style={{ fontSize: 13, fontWeight: 500 }}>Web search</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Khi thiếu bằng chứng, có thể đề xuất tìm web</div>
+                      <div style={{ fontSize: 13, fontWeight: 500 }}>{lt('Web search', 'Web search')}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lt('Khi thiếu bằng chứng, có thể đề xuất tìm web', 'When evidence is missing, suggest searching the web')}</div>
                     </div>
                     <Toggle
                       checked={settings.system.ai.webSearch}
@@ -924,12 +960,12 @@ const Settings = () => {
           <div className="card__header">
             <h3 className="card__title">
               <Globe size={18} className="card__title-icon" />
-              Ngôn ngữ
+              {lt('Ngôn ngữ', 'Language')}
             </h3>
           </div>
           <div className="card__body">
             <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: 'var(--space-md)' }}>
-              Chọn ngôn ngữ hiển thị cho ứng dụng
+              {lt('Chọn ngôn ngữ hiển thị cho ứng dụng', 'Choose application display language')}
             </p>
             <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
               {(['vi', 'en'] as Language[]).map((lang) => (

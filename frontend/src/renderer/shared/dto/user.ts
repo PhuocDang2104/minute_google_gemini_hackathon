@@ -33,6 +33,7 @@ export interface DepartmentListResponse {
 }
 
 export type LlmProvider = 'gemini' | 'groq';
+export type LocaleCode = 'vi' | 'en';
 
 export interface LlmBehaviorSettings {
   nickname?: string | null;
@@ -88,3 +89,17 @@ export const ROLE_LABELS: Record<User['role'], string> = {
   chair: 'Chủ trì',
   user: 'Thành viên',
 };
+
+export const ROLE_LABELS_EN: Record<User['role'], string> = {
+  admin: 'Admin',
+  PMO: 'PMO',
+  chair: 'Chair',
+  user: 'Member',
+};
+
+export function getRoleLabel(role: User['role'], language: LocaleCode = 'vi'): string {
+  if (language === 'en') {
+    return ROLE_LABELS_EN[role] || role;
+  }
+  return ROLE_LABELS[role] || role;
+}

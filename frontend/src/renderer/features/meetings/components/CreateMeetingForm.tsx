@@ -2,8 +2,9 @@ import { useState, FormEvent } from 'react';
 import { Calendar, Clock, MapPin, Users, Link2, FileText, Tag, Loader2 } from 'lucide-react';
 import { FormField, Input, Textarea, Select } from '../../../components/ui/FormField';
 import type { MeetingCreate, MeetingType } from '../../../shared/dto/meeting';
-import { MEETING_TYPE_LABELS } from '../../../shared/dto/meeting';
+import { MEETING_TYPE_LABELS, getMeetingTypeLabel } from '../../../shared/dto/meeting';
 import { meetingsApi } from '../../../lib/api/meetings';
+import { useLocaleText } from '../../../i18n/useLocaleText';
 
 interface CreateMeetingFormProps {
   onSuccess: (meetingId: string) => void;
@@ -48,6 +49,7 @@ interface FormErrors {
 }
 
 export const CreateMeetingForm = ({ onSuccess, onCancel, projectId }: CreateMeetingFormProps) => {
+  const { lt, language } = useLocaleText();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -76,7 +78,7 @@ export const CreateMeetingForm = ({ onSuccess, onCancel, projectId }: CreateMeet
     try {
       const now = new Date();
       // Format as "Untitled - HH:MM DD/MM/YYYY" or similar, but simplified
-      const defaultTitle = `Untitled ${type === 'study_session' ? 'Session' : 'Meeting'} - ${now.toLocaleString('vi-VN')}`;
+      const defaultTitle = `${lt('Chưa đặt tên', 'Untitled')} ${getMeetingTypeLabel(type, language)} - ${now.toLocaleString(language === 'en' ? 'en-US' : 'vi-VN')}`;
 
       const payload: MeetingCreate = {
         title: defaultTitle,
@@ -97,7 +99,7 @@ export const CreateMeetingForm = ({ onSuccess, onCancel, projectId }: CreateMeet
       setIsSubmitting(false);
       setStep('selection');
       // Show simple alert for now as we don't have global toast
-      alert('Không thể tạo nhanh cuộc họp. Vui lòng thử lại.');
+      alert(lt('Không thể tạo nhanh cuộc họp. Vui lòng thử lại.', 'Unable to create a meeting quickly. Please try again.'));
     }
   };
 
@@ -113,8 +115,8 @@ export const CreateMeetingForm = ({ onSuccess, onCancel, projectId }: CreateMeet
     return (
       <div className="mode-selection-container" style={{ textAlign: 'center', padding: '60px 0' }}>
         <Loader2 size={48} className="spinner" style={{ animation: 'spin 1s linear infinite', color: '#6366f1', margin: '0 auto 24px' }} />
-        <h3 style={{ fontSize: 18, color: 'var(--text-primary)' }}>Đang tạo phiên làm việc mới...</h3>
-        <p style={{ color: 'var(--text-secondary)', marginTop: 8 }}>Vui lòng đợi trong giây lát</p>
+        <h3 style={{ fontSize: 18, color: 'var(--text-primary)' }}>{lt('Đang tạo phiên làm việc mới...', 'Creating new session...')}</h3>
+        <p style={{ color: 'var(--text-secondary)', marginTop: 8 }}>{lt('Vui lòng đợi trong giây lát', 'Please wait a moment')}</p>
       </div>
     );
   }
@@ -122,7 +124,7 @@ export const CreateMeetingForm = ({ onSuccess, onCancel, projectId }: CreateMeet
   // Quick Create Selection Screen
   return (
     <div className="mode-selection-container" style={{ textAlign: 'center', padding: '20px 0' }}>
-      <h3 style={{ marginBottom: 24, fontSize: 18, color: 'var(--text-primary)' }}>Bạn muốn tạo loại phiên làm việc nào?</h3>
+      <h3 style={{ marginBottom: 24, fontSize: 18, color: 'var(--text-primary)' }}>{lt('Bạn muốn tạo loại phiên làm việc nào?', 'Which type of session do you want to create?')}</h3>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
         <button
@@ -169,8 +171,8 @@ export const CreateMeetingForm = ({ onSuccess, onCancel, projectId }: CreateMeet
             <Users size={32} />
           </div>
           <div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>Dự án / Công việc</div>
-            <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Tạo ngay cuộc họp dự án mới</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>{lt('Dự án / Công việc', 'Project / Work')}</div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{lt('Tạo ngay cuộc họp dự án mới', 'Create a new project meeting now')}</div>
           </div>
         </button>
 
@@ -218,15 +220,15 @@ export const CreateMeetingForm = ({ onSuccess, onCancel, projectId }: CreateMeet
             <Calendar size={32} />
           </div>
           <div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>Lớp học Online</div>
-            <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Tạo ngay session học tập mới</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>{lt('Lớp học Online', 'Online Class')}</div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{lt('Tạo ngay session học tập mới', 'Create a new study session now')}</div>
           </div>
         </button>
       </div>
 
       <div style={{ marginTop: 32, display: 'flex', justifyContent: 'center' }}>
         <button type="button" className="btn btn--ghost" onClick={onCancel} disabled={isSubmitting}>
-          Hủy bỏ
+          {lt('Hủy bỏ', 'Cancel')}
         </button>
       </div>
     </div>
@@ -234,4 +236,3 @@ export const CreateMeetingForm = ({ onSuccess, onCancel, projectId }: CreateMeet
 };
 
 export default CreateMeetingForm;
-

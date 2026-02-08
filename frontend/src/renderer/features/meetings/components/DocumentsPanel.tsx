@@ -14,12 +14,14 @@ import { aiApi } from '../../../lib/api/ai';
 import { documentsApi, type DocumentCreate } from '../../../lib/api/documents';
 import type { PrereadDocument, MeetingSuggestion } from '../../../shared/dto/ai';
 import { SOURCE_ICONS } from '../../../shared/dto/ai';
+import { useLocaleText } from '../../../i18n/useLocaleText';
 
 interface DocumentsPanelProps {
   meetingId: string;
 }
 
 export const DocumentsPanel = ({ meetingId }: DocumentsPanelProps) => {
+  const { lt } = useLocaleText();
   const [documents, setDocuments] = useState<PrereadDocument[]>([]);
   const [suggestions, setSuggestions] = useState<MeetingSuggestion[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -47,7 +49,7 @@ export const DocumentsPanel = ({ meetingId }: DocumentsPanelProps) => {
           title: 'Project Charter - Core Banking Modernization',
           source: 'SharePoint',
           url: 'https://lpbank.sharepoint.com/docs/charter.pdf',
-          snippet: 'Tài liệu Project Charter định nghĩa scope, objectives...',
+          snippet: lt('Tài liệu Project Charter định nghĩa scope, objectives...', 'Project Charter document defining scope and objectives...'),
           relevance_score: 0.95,
           status: 'suggested',
         },
@@ -57,7 +59,7 @@ export const DocumentsPanel = ({ meetingId }: DocumentsPanelProps) => {
           title: 'Technical Architecture Document v2.1',
           source: 'SharePoint',
           url: 'https://lpbank.sharepoint.com/docs/arch.pdf',
-          snippet: 'Kiến trúc kỹ thuật bao gồm system design...',
+          snippet: lt('Kiến trúc kỹ thuật bao gồm system design...', 'Technical architecture including system design...'),
           relevance_score: 0.92,
           status: 'suggested',
         },
@@ -67,7 +69,7 @@ export const DocumentsPanel = ({ meetingId }: DocumentsPanelProps) => {
           title: 'NHNN Circular 09/2020',
           source: 'Wiki',
           url: 'https://wiki.lpbank.vn/compliance',
-          snippet: 'Thông tư quy định về quản lý rủi ro CNTT...',
+          snippet: lt('Thông tư quy định về quản lý rủi ro CNTT...', 'Circular about IT risk management requirements...'),
           relevance_score: 0.88,
           status: 'suggested',
         },
@@ -136,14 +138,14 @@ export const DocumentsPanel = ({ meetingId }: DocumentsPanelProps) => {
   return (
     <div className="documents-panel">
       <div className="panel-header">
-        <h3 className="panel-title">Tài liệu Pre-read</h3>
+        <h3 className="panel-title">{lt('Tài liệu Pre-read', 'Pre-read Documents')}</h3>
         <div className="panel-actions">
           <button
             className="btn btn--secondary btn--sm"
             onClick={() => setShowUploadModal(true)}
           >
             <Upload size={14} />
-            Tải lên
+            {lt('Tải lên', 'Upload')}
           </button>
           <button
             className="btn btn--accent btn--sm"
@@ -153,12 +155,12 @@ export const DocumentsPanel = ({ meetingId }: DocumentsPanelProps) => {
             {isLoading ? (
               <>
                 <Loader2 size={14} className="spinner" />
-                Đang tìm...
+                {lt('Đang tìm...', 'Searching...')}
               </>
             ) : (
               <>
                 <Sparkles size={14} />
-                AI Gợi ý tài liệu
+                {lt('AI Gợi ý tài liệu', 'AI Suggest Documents')}
               </>
             )}
           </button>
@@ -170,7 +172,7 @@ export const DocumentsPanel = ({ meetingId }: DocumentsPanelProps) => {
         <div className="document-section">
           <h4 className="document-section__title">
             <Check size={14} />
-            Tài liệu đã chọn ({acceptedDocs.length})
+            {lt('Tài liệu đã chọn', 'Selected documents')} ({acceptedDocs.length})
           </h4>
           <div className="document-list">
             {acceptedDocs.map(doc => (
@@ -191,7 +193,7 @@ export const DocumentsPanel = ({ meetingId }: DocumentsPanelProps) => {
         <div className="document-section">
           <h4 className="document-section__title">
             <Sparkles size={14} />
-            AI Gợi ý ({suggestedDocs.length})
+            {lt('AI Gợi ý', 'AI Suggestions')} ({suggestedDocs.length})
           </h4>
           <div className="document-list">
             {suggestedDocs.map(doc => (
@@ -211,9 +213,12 @@ export const DocumentsPanel = ({ meetingId }: DocumentsPanelProps) => {
       {documents.length === 0 && !isLoading && (
         <div className="empty-state">
           <FolderOpen className="empty-state__icon" />
-          <h3 className="empty-state__title">Chưa có tài liệu</h3>
+          <h3 className="empty-state__title">{lt('Chưa có tài liệu', 'No documents yet')}</h3>
           <p className="empty-state__description">
-            Bấm "AI Gợi ý tài liệu" để Minute tìm các tài liệu liên quan từ SharePoint, Wiki, và các nguồn nội bộ
+            {lt(
+              'Bấm "AI Gợi ý tài liệu" để Minute tìm các tài liệu liên quan từ SharePoint, Wiki, và các nguồn nội bộ',
+              'Click "AI Suggest Documents" so Minute can find relevant docs from SharePoint, Wiki, and internal sources.',
+            )}
           </p>
         </div>
       )}
@@ -238,6 +243,7 @@ interface UploadDocumentModalProps {
 }
 
 const UploadDocumentModal = ({ onUpload, onClose, isUploading }: UploadDocumentModalProps) => {
+  const { lt } = useLocaleText();
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -269,7 +275,7 @@ const UploadDocumentModal = ({ onUpload, onClose, isUploading }: UploadDocumentM
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 500 }}>
         <div className="modal__header">
-          <h3>Tải lên tài liệu</h3>
+          <h3>{lt('Tải lên tài liệu', 'Upload document')}</h3>
           <button className="btn btn--ghost btn--icon" onClick={onClose}>
             <X size={18} />
           </button>
@@ -278,7 +284,7 @@ const UploadDocumentModal = ({ onUpload, onClose, isUploading }: UploadDocumentM
           <div className="modal__body">
             {/* File Select */}
             <div className="form-group">
-              <label className="form-label">Chọn file</label>
+              <label className="form-label">{lt('Chọn file', 'Select file')}</label>
               <input
                 type="file"
                 ref={fileInputRef}
@@ -293,41 +299,41 @@ const UploadDocumentModal = ({ onUpload, onClose, isUploading }: UploadDocumentM
                 style={{ width: '100%' }}
               >
                 <Upload size={16} />
-                {selectedFile ? selectedFile.name : 'Chọn file...'}
+                {selectedFile ? selectedFile.name : lt('Chọn file...', 'Choose file...')}
               </button>
               <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
-                Hỗ trợ: PDF, Word, Excel, PowerPoint, Text
+                {lt('Hỗ trợ: PDF, Word, Excel, PowerPoint, Text', 'Supported: PDF, Word, Excel, PowerPoint, Text')}
               </p>
             </div>
 
             {/* Title */}
             <div className="form-group">
-              <label className="form-label">Tiêu đề *</label>
+              <label className="form-label">{lt('Tiêu đề', 'Title')} *</label>
               <input
                 type="text"
                 className="form-input"
                 value={formData.title}
                 onChange={e => setFormData(prev => ({ ...prev, title: e.target.value }))}
-                placeholder="Tên tài liệu..."
+                placeholder={lt('Tên tài liệu...', 'Document title...')}
                 required
               />
             </div>
 
             {/* Description */}
             <div className="form-group">
-              <label className="form-label">Mô tả</label>
+              <label className="form-label">{lt('Mô tả', 'Description')}</label>
               <textarea
                 className="form-textarea"
                 rows={2}
                 value={formData.description}
                 onChange={e => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                placeholder="Mô tả ngắn về nội dung..."
+                placeholder={lt('Mô tả ngắn về nội dung...', 'Short description of the content...')}
               />
             </div>
 
             {/* File Type */}
             <div className="form-group">
-              <label className="form-label">Loại file</label>
+              <label className="form-label">{lt('Loại file', 'File type')}</label>
               <select
                 className="form-select"
                 value={formData.file_type}
@@ -337,13 +343,13 @@ const UploadDocumentModal = ({ onUpload, onClose, isUploading }: UploadDocumentM
                 <option value="docx">Word (DOCX)</option>
                 <option value="xlsx">Excel (XLSX)</option>
                 <option value="pptx">PowerPoint (PPTX)</option>
-                <option value="txt">Text</option>
+                <option value="txt">{lt('Text', 'Text')}</option>
               </select>
             </div>
 
             {/* URL (optional) */}
             <div className="form-group">
-              <label className="form-label">URL (tùy chọn)</label>
+              <label className="form-label">{lt('URL (tùy chọn)', 'URL (optional)')}</label>
               <input
                 type="url"
                 className="form-input"
@@ -355,11 +361,11 @@ const UploadDocumentModal = ({ onUpload, onClose, isUploading }: UploadDocumentM
           </div>
           <div className="modal__footer">
             <button type="button" className="btn btn--secondary" onClick={onClose}>
-              Hủy
+              {lt('Hủy', 'Cancel')}
             </button>
             <button type="submit" className="btn btn--primary" disabled={isUploading || !formData.title.trim()}>
               {isUploading ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
-              Tải lên
+              {lt('Tải lên', 'Upload')}
             </button>
           </div>
         </form>
@@ -377,6 +383,7 @@ interface DocumentCardProps {
 }
 
 const DocumentCard = ({ document, onAccept, onIgnore, showActions }: DocumentCardProps) => {
+  const { lt } = useLocaleText();
   return (
     <div className="document-card">
       <div className="document-card__icon">
@@ -398,16 +405,16 @@ const DocumentCard = ({ document, onAccept, onIgnore, showActions }: DocumentCar
         <p className="document-card__snippet">{document.snippet}</p>
         <div className="document-card__footer">
           <span className="document-card__score">
-            Độ phù hợp: {Math.round(document.relevance_score * 100)}%
+            {lt('Độ phù hợp', 'Relevance')}: {Math.round(document.relevance_score * 100)}%
           </span>
         </div>
       </div>
       {showActions && (
         <div className="document-card__actions">
-          <button className="btn btn--icon btn--success" onClick={onAccept} title="Chấp nhận">
+          <button className="btn btn--icon btn--success" onClick={onAccept} title={lt('Chấp nhận', 'Accept')}>
             <Check size={16} />
           </button>
-          <button className="btn btn--icon btn--muted" onClick={onIgnore} title="Bỏ qua">
+          <button className="btn btn--icon btn--muted" onClick={onIgnore} title={lt('Bỏ qua', 'Ignore')}>
             <X size={16} />
           </button>
         </div>
@@ -417,4 +424,3 @@ const DocumentCard = ({ document, onAccept, onIgnore, showActions }: DocumentCar
 };
 
 export default DocumentsPanel;
-

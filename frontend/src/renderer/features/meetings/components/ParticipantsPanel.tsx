@@ -11,10 +11,10 @@ import {
 } from 'lucide-react';
 import { usersApi } from '../../../lib/api/users';
 import { meetingsApi } from '../../../lib/api/meetings';
-import type { User as UserType } from '../../../shared/dto/user';
 import type { Participant } from '../../../shared/dto/meeting';
-import { getInitials, ROLE_LABELS } from '../../../shared/dto/user';
+import { getInitials } from '../../../shared/dto/user';
 import { Modal } from '../../../components/ui/Modal';
+import { useLocaleText } from '../../../i18n/useLocaleText';
 
 interface ParticipantsPanelProps {
   meetingId: string;
@@ -23,23 +23,50 @@ interface ParticipantsPanelProps {
 }
 
 export const ParticipantsPanel = ({ meetingId, participants, onUpdate }: ParticipantsPanelProps) => {
+  const { lt } = useLocaleText();
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+
+  const getParticipantRoleLabel = (role: Participant['role']) => {
+    switch (role) {
+      case 'organizer':
+        return lt('Người tổ chức', 'Organizer');
+      case 'required':
+        return lt('Bắt buộc', 'Required');
+      case 'optional':
+        return lt('Tùy chọn', 'Optional');
+      default:
+        return lt('Tham dự', 'Attendee');
+    }
+  };
+
+  const getResponseStatusLabel = (status: Participant['response_status']) => {
+    switch (status) {
+      case 'accepted':
+        return lt('Đã xác nhận', 'Accepted');
+      case 'declined':
+        return lt('Từ chối', 'Declined');
+      case 'tentative':
+        return lt('Có thể', 'Tentative');
+      default:
+        return lt('Chờ phản hồi', 'Pending response');
+    }
+  };
 
   return (
     <div className="participants-panel">
       <div className="panel-header">
-        <h3 className="panel-title">Thành viên tham gia ({participants.length})</h3>
+        <h3 className="panel-title">{lt('Thành viên tham gia', 'Participants')} ({participants.length})</h3>
         <button className="btn btn--primary btn--sm" onClick={() => setIsAddModalOpen(true)}>
           <UserPlus size={16} />
-          Thêm thành viên
+          {lt('Thêm thành viên', 'Add participant')}
         </button>
       </div>
 
       {participants.length === 0 ? (
         <div className="empty-state">
           <User className="empty-state__icon" />
-          <h3 className="empty-state__title">Chưa có thành viên</h3>
-          <p className="empty-state__description">Thêm thành viên để bắt đầu chuẩn bị cuộc họp</p>
+          <h3 className="empty-state__title">{lt('Chưa có thành viên', 'No participants yet')}</h3>
+          <p className="empty-state__description">{lt('Thêm thành viên để bắt đầu chuẩn bị cuộc họp', 'Add participants to start preparing your meeting')}</p>
         </div>
       ) : (
         <div className="participant-list">
@@ -50,19 +77,15 @@ export const ParticipantsPanel = ({ meetingId, participants, onUpdate }: Partici
               </div>
               <div className="participant-card__info">
                 <div className="participant-card__name">
-                  {participant.display_name || 'Unknown User'}
+                  {participant.display_name || lt('Người dùng không xác định', 'Unknown user')}
                 </div>
                 <div className="participant-card__email">{participant.email || ''}</div>
               </div>
               <div className="participant-card__role">
-                {participant.role === 'organizer' ? 'Người tổ chức' : 
-                 participant.role === 'required' ? 'Bắt buộc' :
-                 participant.role === 'optional' ? 'Tùy chọn' : 'Tham dự'}
+                {getParticipantRoleLabel(participant.role)}
               </div>
               <div className={`participant-card__status participant-card__status--${participant.response_status}`}>
-                {participant.response_status === 'accepted' ? 'Đã xác nhận' :
-                 participant.response_status === 'declined' ? 'Từ chối' :
-                 participant.response_status === 'tentative' ? 'Có thể' : 'Chờ phản hồi'}
+                {getResponseStatusLabel(participant.response_status)}
               </div>
             </div>
           ))}
@@ -99,6 +122,7 @@ const AddParticipantModal = ({
   existingParticipants,
   onSuccess,
 }: AddParticipantModalProps) => {
+  const { lt } = useLocaleText();
   const [searchQuery, setSearchQuery] = useState('');
   const [users, setUsers] = useState<UserType[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -160,7 +184,7 @@ const AddParticipantModal = ({
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Thêm thành viên" size="md">
+    <Modal isOpen={isOpen} onClose={onClose} title={lt('Thêm thành viên', 'Add participant')} size="md">
       <div className="add-participant-modal">
         {/* Search */}
         <div className="search-box">
@@ -168,7 +192,7 @@ const AddParticipantModal = ({
           <input
             type="text"
             className="search-box__input"
-            placeholder="Tìm theo tên hoặc email..."
+            placeholder={lt('Tìm theo tên hoặc email...', 'Search by name or email...')}
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
           />
@@ -187,7 +211,7 @@ const AddParticipantModal = ({
             </div>
           ) : users.length === 0 ? (
             <div className="empty-state" style={{ padding: 'var(--space-lg)' }}>
-              <p className="text-muted">Không tìm thấy người dùng</p>
+              <p className="text-muted">{lt('Không tìm thấy người dùng', 'No users found')}</p>
             </div>
           ) : (
             users.map(user => (
@@ -223,7 +247,7 @@ const AddParticipantModal = ({
         {/* Actions */}
         <div className="form-actions">
           <button className="btn btn--secondary" onClick={onClose}>
-            Hủy
+            {lt('Hủy', 'Cancel')}
           </button>
           <button
             className="btn btn--primary"
@@ -233,12 +257,12 @@ const AddParticipantModal = ({
             {isAdding ? (
               <>
                 <Loader2 size={16} className="spinner" />
-                Đang thêm...
+                {lt('Đang thêm...', 'Adding...')}
               </>
             ) : (
               <>
                 <UserPlus size={16} />
-                Thêm {selectedUsers.size > 0 ? `(${selectedUsers.size})` : ''}
+                {lt('Thêm', 'Add')} {selectedUsers.size > 0 ? `(${selectedUsers.size})` : ''}
               </>
             )}
           </button>

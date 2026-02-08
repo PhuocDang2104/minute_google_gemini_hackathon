@@ -3,6 +3,7 @@ import { Bot, MessageCircle, X, Link as LinkIcon, MessageSquare } from 'lucide-r
 import { aiApi } from '../../../lib/api/ai';
 import { aiQueries } from '../../../store/mockData';
 import type { Citation } from '../../../shared/dto/ai';
+import { useLocaleText } from '../../../i18n/useLocaleText';
 
 type ChatMessage = {
   id: string;
@@ -17,19 +18,34 @@ interface AIAssistantChatProps {
   meetingTitle?: string;
 }
 
-const quickPrompts = [
-  'Recap 5 phút gần nhất: điểm thống nhất, điểm còn mở, và rủi ro chính.',
-  'Liệt kê action items mới theo owner, deadline, priority.',
-  'Những quyết định nào đã chốt? Nêu lý do và bằng chứng liên quan.',
-  'Đề xuất email follow-up ngắn cho stakeholder với next steps rõ ràng.',
-];
-
 export const AIAssistantChat = ({ meetingId, meetingTitle }: AIAssistantChatProps) => {
+  const { lt } = useLocaleText();
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasLoadedHistory, setHasLoadedHistory] = useState(false);
+  const quickPrompts = useMemo(
+    () => [
+      lt(
+        'Recap 5 phút gần nhất: điểm thống nhất, điểm còn mở, và rủi ro chính.',
+        'Recap the last 5 minutes: agreements, open points, and key risks.',
+      ),
+      lt(
+        'Liệt kê action items mới theo owner, deadline, priority.',
+        'List new action items by owner, deadline, and priority.',
+      ),
+      lt(
+        'Những quyết định nào đã chốt? Nêu lý do và bằng chứng liên quan.',
+        'Which decisions are confirmed? Include rationale and evidence.',
+      ),
+      lt(
+        'Đề xuất email follow-up ngắn cho stakeholder với next steps rõ ràng.',
+        'Draft a short follow-up email for stakeholders with clear next steps.',
+      ),
+    ],
+    [lt],
+  );
 
   const seededHistory = useMemo<ChatMessage[]>(() => {
     const history = aiQueries.filter(q => q.meetingId === meetingId);
@@ -133,7 +149,7 @@ export const AIAssistantChat = ({ meetingId, meetingTitle }: AIAssistantChatProp
       setMessages(prev => [...prev, assistantMessage]);
     } catch (err) {
       console.error('Failed to send AI chat message', err);
-      setError('Chưa gửi được tới AI. Kiểm tra backend hoặc thử lại sau.');
+      setError(lt('Chưa gửi được tới AI. Kiểm tra backend hoặc thử lại sau.', 'Failed to send to AI. Check backend or try again.'));
     } finally {
       setIsSending(false);
     }
@@ -149,14 +165,14 @@ export const AIAssistantChat = ({ meetingId, meetingTitle }: AIAssistantChatProp
     return (
       <div className="ai-chatbox__citations">
         {citations.map((c, idx) => (
-          <div key={`${c.title}-${idx}`} className="ai-chatbox__citation">
-            <LinkIcon size={12} />
-            <div>
-              <div className="ai-chatbox__citation-title">{c.title}</div>
-              {c.page && <div className="ai-chatbox__citation-meta">Trang {c.page}</div>}
-              {c.snippet && <div className="ai-chatbox__citation-snippet">{c.snippet}</div>}
-            </div>
-          </div>
+              <div key={`${c.title}-${idx}`} className="ai-chatbox__citation">
+                <LinkIcon size={12} />
+                <div>
+                  <div className="ai-chatbox__citation-title">{c.title}</div>
+                  {c.page && <div className="ai-chatbox__citation-meta">{lt('Trang', 'Page')} {c.page}</div>}
+                  {c.snippet && <div className="ai-chatbox__citation-snippet">{c.snippet}</div>}
+                </div>
+              </div>
         ))}
       </div>
     );
@@ -165,7 +181,7 @@ export const AIAssistantChat = ({ meetingId, meetingTitle }: AIAssistantChatProp
   return (
     <>
       {!isOpen && (
-        <button className="ai-chat-trigger" onClick={() => setIsOpen(true)} title="AI Q&A Chatbox">
+        <button className="ai-chat-trigger" onClick={() => setIsOpen(true)} title={lt('Khung hỏi đáp AI', 'AI Q&A Chatbox')}>
           <MessageSquare size={18} />
         </button>
       )}
@@ -176,11 +192,11 @@ export const AIAssistantChat = ({ meetingId, meetingTitle }: AIAssistantChatProp
             <div>
               <div className="ai-chatbox__eyebrow">
                 <Bot size={14} />
-                In-Meeting AI
+                {lt('AI Trong cuộc họp', 'In-Meeting AI')}
               </div>
-              <div className="ai-chatbox__title">AI Q&A Chatbox</div>
+              <div className="ai-chatbox__title">{lt('Khung hỏi đáp AI', 'AI Q&A Chatbox')}</div>
               <div className="ai-chatbox__subtitle">
-                {meetingTitle || 'Cuộc họp'} · Q&A RAG + Recap + ADR
+                {meetingTitle || lt('Cuộc họp', 'Meeting')} · Q&A RAG + Recap + ADR
               </div>
             </div>
             <button className="btn btn--ghost btn--icon" onClick={() => setIsOpen(false)}>
@@ -196,7 +212,7 @@ export const AIAssistantChat = ({ meetingId, meetingTitle }: AIAssistantChatProp
                 </div>
                 <div className="ai-chatbox__bubble">
                   <div className="ai-chatbox__role">
-                    {msg.role === 'assistant' ? 'Minute AI' : 'Bạn'}
+                    {msg.role === 'assistant' ? 'Minute AI' : lt('Bạn', 'You')}
                   </div>
                   <div className="ai-chatbox__text">{msg.content}</div>
                   {renderCitations(msg.citations)}
@@ -214,7 +230,7 @@ export const AIAssistantChat = ({ meetingId, meetingTitle }: AIAssistantChatProp
                     <span></span>
                     <span></span>
                   </div>
-                  <div className="ai-chatbox__text">Đang tạo câu trả lời...</div>
+                  <div className="ai-chatbox__text">{lt('Đang tạo câu trả lời...', 'Generating answer...')}</div>
                 </div>
               </div>
             )}
@@ -224,7 +240,10 @@ export const AIAssistantChat = ({ meetingId, meetingTitle }: AIAssistantChatProp
 
           <div className="ai-chatbox__input">
             <textarea
-              placeholder="Hỏi về recap, decision, action item hoặc tài liệu liên quan..."
+              placeholder={lt(
+                'Hỏi về recap, decision, action item hoặc tài liệu liên quan...',
+                'Ask about recap, decisions, action items, or related documents...',
+              )}
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => {
@@ -236,12 +255,12 @@ export const AIAssistantChat = ({ meetingId, meetingTitle }: AIAssistantChatProp
               rows={2}
             />
             <button className="btn btn--primary" onClick={handleSend} disabled={isSending}>
-              {isSending ? 'Đang gửi...' : 'Gửi'}
+              {isSending ? lt('Đang gửi...', 'Sending...') : lt('Gửi', 'Send')}
             </button>
           </div>
 
           <div className="ai-chatbox__quick">
-            <div className="ai-chatbox__quick-label">Gợi ý nhanh</div>
+            <div className="ai-chatbox__quick-label">{lt('Gợi ý nhanh', 'Quick prompts')}</div>
             <div className="ai-chatbox__quick-list">
               {quickPrompts.map(prompt => (
                 <button

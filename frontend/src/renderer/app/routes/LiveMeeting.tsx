@@ -13,7 +13,7 @@ const LiveMeeting = () => {
       <div>
         <div className="page-header">
           <div>
-            <h1 className="page-header__title">Live Meeting</h1>
+            <h1 className="page-header__title">{lt('Cuộc họp trực tiếp', 'Live Meeting')}</h1>
             <p className="page-header__subtitle">{lt('Đang kiểm tra...', 'Checking...')}</p>
           </div>
         </div>
@@ -33,7 +33,7 @@ const LiveMeeting = () => {
       <div>
         <div className="page-header">
           <div>
-            <h1 className="page-header__title">Live Meeting</h1>
+            <h1 className="page-header__title">{lt('Cuộc họp trực tiếp', 'Live Meeting')}</h1>
             <p className="page-header__subtitle">{lt('Không có cuộc họp nào đang diễn ra', 'No live meeting at the moment')}</p>
           </div>
         </div>
@@ -64,7 +64,7 @@ const LiveMeeting = () => {
     <div>
       <div className="page-header">
         <div>
-          <h1 className="page-header__title">Live Meeting</h1>
+          <h1 className="page-header__title">{lt('Cuộc họp trực tiếp', 'Live Meeting')}</h1>
           <p className="page-header__subtitle">{lt('Cuộc họp đang diễn ra', 'Meeting in progress')}</p>
         </div>
       </div>
@@ -77,7 +77,7 @@ const LiveMeeting = () => {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', marginBottom: 'var(--space-md)' }}>
                   <span className="live-indicator">
                     <span className="live-indicator__dot"></span>
-                    LIVE
+                    {lt('TRỰC TIẾP', 'LIVE')}
                   </span>
                   <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
                     {lt('Bắt đầu lúc', 'Started at')} {liveMeeting.start}

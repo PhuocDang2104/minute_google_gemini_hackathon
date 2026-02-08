@@ -5,6 +5,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Bot, Send, Sparkles, RefreshCw, ChevronUp, X, AlertCircle } from 'lucide-react'
 import { knowledgeApi } from '../../../lib/api/knowledge'
+import { useLocaleText } from '../../../i18n/useLocaleText'
 
 // Types
 interface ChatMessage {
@@ -25,26 +26,27 @@ interface KnowledgeHubChatProps {
   suggestions?: string[]
 }
 
-// Default suggestions
-const DEFAULT_SUGGESTIONS = [
-  'Tóm tắt policy data retention và trích nguồn.',
-  'Các yêu cầu KYC bắt buộc theo tài liệu đã upload?',
-  'Checklist security trước khi release sản phẩm là gì?',
-  'Quy trình Change Request chuẩn gồm những bước nào?',
-]
-
 // Generate unique ID
 const generateId = () => `msg-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 
 export const KnowledgeHubChat = ({
   isExpanded = true,
   onToggle,
-  suggestions = DEFAULT_SUGGESTIONS,
+  suggestions,
 }: KnowledgeHubChatProps) => {
+  const { lt } = useLocaleText()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [inputValue, setInputValue] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const resolvedSuggestions = suggestions && suggestions.length > 0
+    ? suggestions
+    : [
+        lt('Tóm tắt policy data retention và trích nguồn.', 'Summarize the data retention policy with citations.'),
+        lt('Các yêu cầu KYC bắt buộc theo tài liệu đã upload?', 'What are the mandatory KYC requirements in uploaded docs?'),
+        lt('Checklist security trước khi release sản phẩm là gì?', 'What is the pre-release security checklist?'),
+        lt('Quy trình Change Request chuẩn gồm những bước nào?', 'What are the standard Change Request steps?'),
+      ]
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -118,14 +120,14 @@ export const KnowledgeHubChat = ({
       ))
     } catch (err) {
       console.error('Chat error:', err)
-      setError('Không thể kết nối với AI. Vui lòng thử lại.')
+      setError(lt('Không thể kết nối với AI. Vui lòng thử lại.', 'Unable to reach AI. Please try again.'))
       
       // Mark message as error
       setMessages(prev => prev.map(msg =>
         msg.id === loadingId
           ? {
               ...msg,
-              content: 'Đã xảy ra lỗi. Vui lòng thử lại.',
+              content: lt('Đã xảy ra lỗi. Vui lòng thử lại.', 'Something went wrong. Please try again.'),
               isLoading: false,
               isError: true,
             }
@@ -176,8 +178,8 @@ export const KnowledgeHubChat = ({
             <Bot size={18} />
           </div>
           <div className="knowledge-chat__header-text">
-            <h3 className="knowledge-chat__title">Hỏi AI</h3>
-            <p className="knowledge-chat__subtitle">Hỏi theo tài liệu/policy và yêu cầu trích dẫn</p>
+            <h3 className="knowledge-chat__title">{lt('Hỏi AI', 'Ask AI')}</h3>
+            <p className="knowledge-chat__subtitle">{lt('Hỏi theo tài liệu/policy và yêu cầu trích dẫn', 'Ask about docs/policies with evidence-first answers')}</p>
           </div>
         </div>
         <div className="knowledge-chat__header-actions">
@@ -185,7 +187,7 @@ export const KnowledgeHubChat = ({
             <button 
               className="knowledge-chat__header-btn"
               onClick={clearChat}
-              title="Xóa cuộc trò chuyện"
+              title={lt('Xóa cuộc trò chuyện', 'Clear conversation')}
             >
               <RefreshCw size={16} />
             </button>
@@ -209,16 +211,19 @@ export const KnowledgeHubChat = ({
             <div className="knowledge-chat__empty-icon">
               <Sparkles size={28} />
             </div>
-            <h4 className="knowledge-chat__empty-title">Xin chào!</h4>
+            <h4 className="knowledge-chat__empty-title">{lt('Xin chào!', 'Hello!')}</h4>
             <p className="knowledge-chat__empty-text">
-              Tôi có thể giúp bạn truy xuất thông tin từ tài liệu đã upload, kèm trích dẫn khi có.
+              {lt(
+                'Tôi có thể giúp bạn truy xuất thông tin từ tài liệu đã upload, kèm trích dẫn khi có.',
+                'I can help retrieve information from uploaded documents, with citations when available.',
+              )}
             </p>
             
             {/* Quick Suggestions */}
             <div className="knowledge-chat__suggestions">
-              <span className="knowledge-chat__suggestions-label">Gợi ý:</span>
+              <span className="knowledge-chat__suggestions-label">{lt('Gợi ý:', 'Suggestions:')}</span>
               <div className="knowledge-chat__suggestions-list">
-                {suggestions.map((suggestion, idx) => (
+                {resolvedSuggestions.map((suggestion, idx) => (
                   <button
                     key={idx}
                     className="knowledge-chat__suggestion"
@@ -273,7 +278,7 @@ export const KnowledgeHubChat = ({
               className="knowledge-chat__error-retry"
               onClick={retryLastMessage}
             >
-              Thử lại
+              {lt('Thử lại', 'Retry')}
             </button>
           </div>
         )}
@@ -284,7 +289,7 @@ export const KnowledgeHubChat = ({
         {/* Quick suggestions when not empty */}
         {!isEmpty && messages.length < 3 && (
           <div className="knowledge-chat__quick-chips">
-            {suggestions.slice(0, 2).map((suggestion, idx) => (
+            {resolvedSuggestions.slice(0, 2).map((suggestion, idx) => (
               <button
                 key={idx}
                 className="knowledge-chat__quick-chip"
@@ -304,7 +309,7 @@ export const KnowledgeHubChat = ({
             value={inputValue}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
-            placeholder="Đặt câu hỏi về tài liệu, policy, compliance..."
+            placeholder={lt('Đặt câu hỏi về tài liệu, policy, compliance...', 'Ask about docs, policy, and compliance...')}
             rows={1}
             disabled={isStreaming}
           />

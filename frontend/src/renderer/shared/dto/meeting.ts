@@ -6,6 +6,7 @@
 
 export type MeetingType = 'project_meeting' | 'study_session' | 'steering' | 'weekly_status' | 'risk_review' | 'workshop' | 'daily';
 export type MeetingPhase = 'pre' | 'in' | 'post';
+export type LocaleCode = 'vi' | 'en';
 export type ParticipantRole = 'organizer' | 'required' | 'optional' | 'attendee';
 export type ResponseStatus = 'accepted' | 'declined' | 'tentative' | 'pending';
 
@@ -94,3 +95,33 @@ export const MEETING_PHASE_LABELS: Record<MeetingPhase, string> = {
   in: 'Đang họp',
   post: 'Hoàn thành',
 };
+
+export const MEETING_TYPE_LABELS_EN: Record<string, string> = {
+  project_meeting: 'Project Meeting',
+  study_session: 'Study Session',
+  steering: 'Steering Committee',
+  weekly_status: 'Weekly Status',
+  risk_review: 'Risk Review',
+  workshop: 'Workshop',
+  daily: 'Daily Standup',
+};
+
+export const MEETING_PHASE_LABELS_EN: Record<MeetingPhase, string> = {
+  pre: 'Preparation',
+  in: 'In Meeting',
+  post: 'Completed',
+};
+
+export function getMeetingTypeLabel(type: string, language: LocaleCode = 'vi'): string {
+  if (language === 'en') {
+    return MEETING_TYPE_LABELS_EN[type] || type;
+  }
+  return MEETING_TYPE_LABELS[type] || type;
+}
+
+export function getMeetingPhaseLabel(phase: MeetingPhase, language: LocaleCode = 'vi'): string {
+  if (language === 'en') {
+    return MEETING_PHASE_LABELS_EN[phase] || phase;
+  }
+  return MEETING_PHASE_LABELS[phase] || phase;
+}
