@@ -51,6 +51,7 @@ const MeetingDock = () => {
   const [recordingState, setRecordingState] = useState<'idle' | 'recording' | 'saving' | 'saved' | 'error'>('idle');
   const [recordingInfo, setRecordingInfo] = useState<string | null>(null);
   const [recordingError, setRecordingError] = useState<string | null>(null);
+  const [isEndingSession, setIsEndingSession] = useState(false);
   const previewVideoRef = useRef<HTMLVideoElement | null>(null);
   const audioWsRef = useRef<WebSocket | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -62,6 +63,9 @@ const MeetingDock = () => {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingChunksRef = useRef<Blob[]>([]);
   const uploadInFlightRef = useRef(false);
+  const recordingUploadPromiseRef = useRef<Promise<void> | null>(null);
+  const recordingStopPromiseRef = useRef<Promise<void> | null>(null);
+  const recordingStopResolveRef = useRef<(() => void) | null>(null);
   const mountedRef = useRef(true);
   const { setOverride, clearOverride } = useChatContext();
 
@@ -117,11 +121,32 @@ const MeetingDock = () => {
     [fetchMeeting, meetingId],
   );
 
-  const stopSessionRecording = useCallback(() => {
+  const stopSessionRecording = useCallback(async () => {
     const recorder = mediaRecorderRef.current;
-    if (!recorder) return;
-    if (recorder.state !== 'inactive') {
-      recorder.stop();
+    if (recorder && recorder.state !== 'inactive') {
+      if (!recordingStopPromiseRef.current) {
+        recordingStopPromiseRef.current = new Promise<void>((resolve) => {
+          recordingStopResolveRef.current = resolve;
+        });
+      }
+      try {
+        recorder.stop();
+      } catch (_err) {
+        // Ignore stop race conditions.
+      }
+      try {
+        await recordingStopPromiseRef.current;
+      } catch (_err) {
+        // Keep end-session flow alive.
+      }
+    }
+
+    if (recordingUploadPromiseRef.current) {
+      try {
+        await recordingUploadPromiseRef.current;
+      } catch (_err) {
+        // uploadSessionRecording already updates UI state.
+      }
     }
   }, []);
 
@@ -150,7 +175,18 @@ const MeetingDock = () => {
         }
 
         const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+        const resolveStopWaiter = () => {
+          if (recordingStopResolveRef.current) {
+            recordingStopResolveRef.current();
+            recordingStopResolveRef.current = null;
+          }
+          recordingStopPromiseRef.current = null;
+        };
+
         recordingChunksRef.current = [];
+        recordingUploadPromiseRef.current = null;
+        recordingStopPromiseRef.current = null;
+        recordingStopResolveRef.current = null;
         recorder.ondataavailable = evt => {
           if (evt.data && evt.data.size > 0) {
             recordingChunksRef.current.push(evt.data);
@@ -163,15 +199,24 @@ const MeetingDock = () => {
           if (parts.length === 0) {
             setRecordingState('idle');
             setRecordingInfo(null);
+            resolveStopWaiter();
             return;
           }
           const blob = new Blob(parts, { type: recorder.mimeType || 'video/webm' });
-          void uploadSessionRecording(blob);
+          const uploadPromise = uploadSessionRecording(blob);
+          recordingUploadPromiseRef.current = uploadPromise;
+          void uploadPromise.finally(() => {
+            if (recordingUploadPromiseRef.current === uploadPromise) {
+              recordingUploadPromiseRef.current = null;
+            }
+            resolveStopWaiter();
+          });
         };
         recorder.onerror = evt => {
           console.error('MediaRecorder error:', evt);
           setRecordingState('error');
           setRecordingError('Lỗi ghi lại phiên họp trên trình duyệt.');
+          resolveStopWaiter();
         };
         recorder.start(RECORDING_TIMESLICE_MS);
         mediaRecorderRef.current = recorder;
@@ -213,8 +258,8 @@ const MeetingDock = () => {
     }
   }, []);
 
-  const stopPreview = useCallback((message?: string) => {
-    stopSessionRecording();
+  const stopPreview = useCallback(async (message?: string, waitForRecording: boolean = false) => {
+    const stopTask = stopSessionRecording();
     setPreviewStream(prev => {
       if (prev) {
         prev.getTracks().forEach(track => track.stop());
@@ -222,6 +267,9 @@ const MeetingDock = () => {
       return null;
     });
     stopAudioCapture(message);
+    if (waitForRecording) {
+      await stopTask;
+    }
   }, [stopAudioCapture, stopSessionRecording]);
 
   useEffect(() => {
@@ -265,7 +313,7 @@ const MeetingDock = () => {
     const track = previewStream.getVideoTracks()[0];
     if (!track) return;
     const handleEnded = () => {
-      stopPreview('Đã dừng chia sẻ tab.');
+      void stopPreview('Đã dừng chia sẻ tab.');
     };
     track.addEventListener('ended', handleEnded);
     return () => {
@@ -278,13 +326,13 @@ const MeetingDock = () => {
       if (previewStream) {
         previewStream.getTracks().forEach(track => track.stop());
       }
-      stopSessionRecording();
+      void stopSessionRecording();
     };
   }, [previewStream, stopSessionRecording]);
 
   useEffect(() => {
     return () => {
-      stopSessionRecording();
+      void stopSessionRecording();
       stopAudioCapture();
     };
   }, [stopAudioCapture, stopSessionRecording]);
@@ -476,14 +524,18 @@ const MeetingDock = () => {
   }, [audioWsUrl, ensureAudioToken, joinPlatform, meetingId, streamSessionId, stopAudioCapture]);
 
   const handleEndMeeting = async () => {
-    if (!meetingId) return;
+    if (!meetingId || isEndingSession) return;
+    setIsEndingSession(true);
     try {
-      stopPreview();
+      await stopPreview(undefined, true);
       await meetingsApi.updatePhase(meetingId, 'post');
       await fetchMeeting();
+      navigate(`/app/meetings/${meetingId}/detail`);
     } catch (err) {
       console.error('Failed to end meeting:', err);
       setError('Không kết thúc được cuộc họp.');
+    } finally {
+      setIsEndingSession(false);
     }
   };
 
@@ -493,7 +545,7 @@ const MeetingDock = () => {
   };
 
   const handleStopPreview = useCallback(() => {
-    stopPreview();
+    void stopPreview();
   }, [stopPreview]);
 
   const handleSelectPreview = useCallback(async () => {
@@ -597,7 +649,7 @@ const MeetingDock = () => {
       ? 'Recording đã lưu'
       : recordingState === 'error'
       ? 'Live record gặp lỗi'
-      : 'Live record chưa bật';
+      : 'Chưa chọn tab để bắt đầu live record';
 
   return (
     <div className="sidecar-dock">
@@ -611,6 +663,9 @@ const MeetingDock = () => {
             <div className="sidecar-preview__actions">
               <button className="btn btn--secondary btn--sm" onClick={handleSelectPreview} disabled={isPreviewLoading}>
                 {isPreviewLoading ? 'Đang mở...' : previewActionLabel}
+              </button>
+              <button className="btn btn--error btn--sm" onClick={handleEndMeeting} disabled={isEndingSession}>
+                {isEndingSession ? 'Đang kết thúc...' : 'End session'}
               </button>
               {previewStream && (
                 <button className="btn btn--ghost btn--sm" onClick={handleStopPreview}>
@@ -667,6 +722,9 @@ const MeetingDock = () => {
             <button className="btn btn--secondary" onClick={handleSelectPreview} disabled={isPreviewLoading}>
               <ScreenShare size={14} />
               {isPreviewLoading ? 'Đang mở...' : previewActionLabel}
+            </button>
+            <button className="btn btn--error" onClick={handleEndMeeting} disabled={isEndingSession}>
+              {isEndingSession ? 'Đang kết thúc...' : 'End session'}
             </button>
             {previewStream && (
               <button className="btn btn--ghost" onClick={handleStopPreview}>
