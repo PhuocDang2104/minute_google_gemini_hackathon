@@ -27,8 +27,9 @@ from app.api.v1.endpoints import (
     tools,
     marketing,
     asr,
+    realtime_av,
 )
-from app.api.v1.websocket import in_meeting_ws
+from app.api.v1.websocket import in_meeting_ws, realtime_av_ws
 
 settings = get_settings()
 
@@ -64,8 +65,7 @@ app.include_router(projects.router, prefix=f"{settings.api_v1_prefix}/projects",
 app.include_router(documents.router, prefix=f"{settings.api_v1_prefix}/documents", tags=['documents'])
 app.include_router(agenda.router, prefix=f"{settings.api_v1_prefix}/agenda", tags=['agenda'])
 app.include_router(knowledge.router, prefix=f"{settings.api_v1_prefix}/knowledge", tags=['knowledge'])
-# Diarization API temporarily disabled - using external service instead
-# app.include_router(diarization.router, prefix=f"{settings.api_v1_prefix}", tags=['diarization'])
+app.include_router(diarization.router, prefix=f"{settings.api_v1_prefix}", tags=['diarization'])
 app.include_router(in_meeting.router, prefix=f"{settings.api_v1_prefix}/in-meeting", tags=['in-meeting'])
 app.include_router(post_meeting.router, prefix=f"{settings.api_v1_prefix}/post-meeting", tags=['post-meeting'])
 app.include_router(rag.router, prefix=f"{settings.api_v1_prefix}/rag", tags=['rag'])
@@ -79,7 +79,9 @@ app.include_router(minutes_template.router, prefix=f"{settings.api_v1_prefix}/mi
 app.include_router(tools.router, prefix=f"{settings.api_v1_prefix}/tools", tags=['tools'])
 app.include_router(marketing.router, prefix=f"{settings.api_v1_prefix}/marketing", tags=['marketing'])
 app.include_router(asr.router, prefix=f"{settings.api_v1_prefix}/asr", tags=['asr'])
+app.include_router(realtime_av.router, prefix=f"{settings.api_v1_prefix}/realtime-av", tags=['realtime-av'])
 app.include_router(in_meeting_ws.router, prefix=f"{settings.api_v1_prefix}/ws", tags=['ws'])
+app.include_router(realtime_av_ws.router, prefix=f"{settings.api_v1_prefix}/ws", tags=['ws-realtime-av'])
 
 # Serve uploaded files (local)
 upload_path = (Path(__file__).parent.parent / "uploaded_files").resolve()

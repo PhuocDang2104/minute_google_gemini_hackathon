@@ -13484,30 +13484,47 @@ a {
 
 /* In-meeting audio stream indicator */
 .audio-indicator {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  border-radius: 12px;
+  justify-content: flex-start;
+  gap: 12px;
+  width: 100%;
+  min-height: 54px;
+  padding: 10px 14px 10px 16px;
+  border-radius: 14px;
   border: 1px solid var(--border-subtle);
-  background: var(--bg-elevated);
+  background: linear-gradient(90deg, rgba(15, 23, 42, 0.03) 0%, var(--bg-elevated) 26%, var(--bg-elevated) 100%);
   color: var(--accent);
+  box-sizing: border-box;
   min-width: 0;
-  max-width: 160px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.04);
+  max-width: none;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+}
+.audio-indicator::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: currentColor;
+  opacity: 0.8;
 }
 .audio-indicator__pulse {
+  flex-shrink: 0;
   position: relative;
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 .audio-indicator__wave {
   position: absolute;
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   border: 1px solid currentColor;
   opacity: 0.35;
@@ -13526,18 +13543,22 @@ a {
 .audio-indicator__labels {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
+  flex: 1;
   min-width: 0;
 }
 .audio-indicator__title {
   font-size: 12px;
   color: var(--text-muted);
-  line-height: 1;
+  line-height: 1.1;
 }
 .audio-indicator__status {
   font-weight: 600;
   font-size: 14px;
   line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .audio-indicator--live {
   color: var(--success);

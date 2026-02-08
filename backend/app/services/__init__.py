@@ -18,7 +18,11 @@ from . import (
     video_service,
     template_service,
     asr_service,
+<<<<<<< HEAD
     summary_service,
+=======
+    realtime_av_service,
+>>>>>>> 2d22640 (Dock session updated + realtime flow enhanced)
 )
 
 __all__ = [
@@ -39,4 +43,5 @@ __all__ = [
     'template_service',
     'asr_service',
     'summary_service',
+    'realtime_av_service',
 ]

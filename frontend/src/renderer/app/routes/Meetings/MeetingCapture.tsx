@@ -163,7 +163,7 @@ const MeetingCapture = () => {
 
     mediaRef.current = stream;
 
-    const wsUrl = `${audioWsUrl}?token=${audioToken}&stt=1`;
+    const wsUrl = `${audioWsUrl}?token=${audioToken}`;
     const ws = new WebSocket(wsUrl);
     ws.binaryType = 'arraybuffer';
     wsRef.current = ws;
@@ -206,7 +206,7 @@ const MeetingCapture = () => {
         processor.connect(ctx.destination);
         audioTracks[0].onended = () => stopCapture('Tab audio stream đã dừng.');
         setStatus('streaming');
-        setInfo(`Đang stream 16kHz mono PCM S16LE (${frameMsRef.current}ms/frame) lên SmartVoice ingest.`);
+        setInfo(`Đang stream 16kHz mono PCM S16LE (${frameMsRef.current}ms/frame) lên minute-recorder (batch ASR 1 phút).`);
       } catch (err) {
         console.error('AudioContext init failed', err);
         stopCapture('Không khởi tạo được AudioContext để lấy audio tab.');
@@ -231,7 +231,7 @@ const MeetingCapture = () => {
           return;
         }
         if (data?.event === 'stt_disabled') {
-          setInfo('STT đang tắt ở backend (smartvoice chưa cấu hình).');
+          setInfo('STT đang tắt ở backend.');
           return;
         }
         if (data?.event === 'throttle') {
@@ -292,7 +292,7 @@ const MeetingCapture = () => {
         <div>
           <h1 className="page-header__title">Minute Capture</h1>
           <p className="page-header__subtitle">
-            Lấy audio từ Chrome Tab (Google Meet / Teams web / Zoom web) và stream tới SmartVoice ingest.
+            Lấy audio từ Chrome Tab (Google Meet / Teams web / Zoom web) và stream tới minute-recorder (batch ASR).
           </p>
         </div>
         <div className="page-header__actions">

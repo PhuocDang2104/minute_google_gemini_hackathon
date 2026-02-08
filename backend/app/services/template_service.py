@@ -6,6 +6,7 @@ from typing import Optional, List
 from uuid import UUID
 from sqlalchemy.orm import Session
 from sqlalchemy import text
+from sqlalchemy.exc import ProgrammingError
 
 from app.schemas.minutes_template import (
     MinutesTemplateCreate,
@@ -281,8 +282,14 @@ def get_default_template(db: Session) -> Optional[MinutesTemplateResponse]:
         LIMIT 1
     """)
     
-    result = db.execute(query)
-    row = result.fetchone()
+    try:
+        result = db.execute(query)
+        row = result.fetchone()
+    except ProgrammingError as exc:
+        if "minutes_template" in str(exc).lower():
+            db.rollback()
+            return None
+        raise
     
     if not row:
         return None

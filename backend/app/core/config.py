@@ -94,6 +94,20 @@ class Settings(BaseSettings):
     # Local ASR microservice (whisper.cpp)
     asr_url: str = 'http://asr:9000'
 
+    # Realtime AV pipeline (batch ASR + slide change detection + recap windows)
+    realtime_av_record_ms: int = 30000
+    realtime_av_window_ms: int = 120000
+    realtime_av_window_overlap_ms: int = 15000
+    realtime_av_video_sample_ms: int = 1000
+    realtime_av_dhash_threshold: int = 16
+    realtime_av_candidate_ticks: int = 2
+    realtime_av_ssim_threshold: float = 0.90
+    realtime_av_cooldown_ms: int = 2000
+    realtime_av_capture_width: int = 960
+    realtime_av_capture_height: int = 540
+    realtime_av_detection_width: int = 320
+    realtime_av_detection_height: int = 180
+
     model_config = SettingsConfigDict(
         env_file=find_env_file(),
         env_file_encoding='utf-8',

@@ -300,16 +300,18 @@ export const MeetingDetail = () => {
             </div>
 
             {/* Navigation / join */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <button
-                className="btn btn--secondary"
-                onClick={() => setShowJoinModal(true)}
-                title="Mở dock để capture audio"
-              >
-                <Video size={16} />
-                Live Record
-              </button>
-            </div>
+            {!meeting.recording_url && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  className="btn btn--secondary"
+                  onClick={() => setShowJoinModal(true)}
+                  title="Mở dock để live record"
+                >
+                  <Video size={16} />
+                  Live Record
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </header>

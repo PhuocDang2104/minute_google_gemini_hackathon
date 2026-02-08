@@ -20,6 +20,7 @@ from . import (
     minutes_template,
     tools,
     asr,
+    realtime_av,
 )
 
 __all__ = [
@@ -44,4 +45,5 @@ __all__ = [
     'minutes_template',
     'tools',
     'asr',
+    'realtime_av',
 ]

@@ -10,18 +10,36 @@ import { API_URL, USE_API } from '../../../config/env';
 
 const TARGET_SAMPLE_RATE = 16000;
 const DEFAULT_FRAME_MS = 250;
+const RECORDING_TIMESLICE_MS = 1500;
+
+const decodeJwtPayload = (token: string): Record<string, unknown> | null => {
+  try {
+    const parts = token.split('.');
+    if (parts.length < 2) return null;
+    const normalized = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+    const decoded = atob(padded);
+    return JSON.parse(decoded) as Record<string, unknown>;
+  } catch (_err) {
+    return null;
+  }
+};
 
 const MeetingDock = () => {
   const { meetingId } = useParams<{ meetingId: string }>();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const sessionFromQuery = searchParams.get('session');
+  const linkFromQuery = searchParams.get('link');
+  const platformFromQuery = searchParams.get('platform');
+  const tokenFromQuery = searchParams.get('token') || '';
 
   const [meeting, setMeeting] = useState<MeetingWithParticipants | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [joinLink, setJoinLink] = useState('');
   const [joinPlatform, setJoinPlatform] = useState<'gomeet' | 'gmeet'>('gomeet');
-  const [streamSessionId, setStreamSessionId] = useState<string>('');
+  const [streamSessionId, setStreamSessionId] = useState<string>(sessionFromQuery || meetingId || '');
   const [previewStream, setPreviewStream] = useState<MediaStream | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
@@ -30,6 +48,9 @@ const MeetingDock = () => {
   const [audioInfo, setAudioInfo] = useState<string | null>(null);
   const [audioToken, setAudioToken] = useState('');
   const [isAudioTokenLoading, setIsAudioTokenLoading] = useState(false);
+  const [recordingState, setRecordingState] = useState<'idle' | 'recording' | 'saving' | 'saved' | 'error'>('idle');
+  const [recordingInfo, setRecordingInfo] = useState<string | null>(null);
+  const [recordingError, setRecordingError] = useState<string | null>(null);
   const previewVideoRef = useRef<HTMLVideoElement | null>(null);
   const audioWsRef = useRef<WebSocket | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -38,12 +59,11 @@ const MeetingDock = () => {
   const audioStartAckRef = useRef(false);
   const autoPreviewRef = useRef(false);
   const frameSamplesRef = useRef(Math.round((TARGET_SAMPLE_RATE * DEFAULT_FRAME_MS) / 1000));
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordingChunksRef = useRef<Blob[]>([]);
+  const uploadInFlightRef = useRef(false);
+  const mountedRef = useRef(true);
   const { setOverride, clearOverride } = useChatContext();
-
-  const sessionFromQuery = searchParams.get('session');
-  const linkFromQuery = searchParams.get('link');
-  const platformFromQuery = searchParams.get('platform');
-  const tokenFromQuery = searchParams.get('token') || '';
 
   const wsBase = useMemo(() => {
     if (API_URL.startsWith('https://')) return API_URL.replace(/^https:/i, 'wss:').replace(/\/$/, '');
@@ -55,6 +75,123 @@ const MeetingDock = () => {
     if (!streamSessionId) return '';
     return `${wsBase}/api/v1/ws/audio/${streamSessionId}`;
   }, [streamSessionId, wsBase]);
+
+  const fetchMeeting = useCallback(async () => {
+    if (!meetingId) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const data = await meetingsApi.get(meetingId);
+      setMeeting(data);
+      setJoinLink(linkFromQuery || data.teams_link || '');
+      setStreamSessionId(prev => prev || sessionFromQuery || data.id);
+    } catch (err) {
+      console.error('Failed to fetch meeting for dock view:', err);
+      setError('Không thể tải cuộc họp (dock view).');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [linkFromQuery, meetingId, sessionFromQuery]);
+
+  const uploadSessionRecording = useCallback(
+    async (blob: Blob) => {
+      if (!meetingId || uploadInFlightRef.current || blob.size === 0) return;
+      uploadInFlightRef.current = true;
+      setRecordingState('saving');
+      setRecordingError(null);
+      setRecordingInfo('Đang lưu recording lên backend...');
+      try {
+        const file = new File([blob], `meeting-${meetingId}-${Date.now()}.webm`, {
+          type: blob.type || 'video/webm',
+        });
+        await meetingsApi.uploadVideo(meetingId, file);
+        await fetchMeeting();
+        if (mountedRef.current) {
+          setRecordingState('saved');
+          setRecordingInfo('Đã lưu recording. Post-meet đã có video.');
+        }
+      } catch (err) {
+        console.error('Failed to upload live recording:', err);
+        if (mountedRef.current) {
+          setRecordingState('error');
+          setRecordingError('Không lưu được recording lên backend.');
+        }
+      } finally {
+        uploadInFlightRef.current = false;
+      }
+    },
+    [fetchMeeting, meetingId],
+  );
+
+  const stopSessionRecording = useCallback(() => {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder) return;
+    if (recorder.state !== 'inactive') {
+      recorder.stop();
+    }
+  }, []);
+
+  const startSessionRecording = useCallback(
+    (stream: MediaStream) => {
+      if (!meetingId || meeting?.recording_url) return;
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') return;
+      if (typeof MediaRecorder === 'undefined') {
+        setRecordingState('error');
+        setRecordingError('Trình duyệt không hỗ trợ MediaRecorder.');
+        return;
+      }
+
+      try {
+        const mimeCandidates = [
+          'video/webm;codecs=vp9,opus',
+          'video/webm;codecs=vp8,opus',
+          'video/webm',
+        ];
+        let mimeType = '';
+        for (const candidate of mimeCandidates) {
+          if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(candidate)) {
+            mimeType = candidate;
+            break;
+          }
+        }
+
+        const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+        recordingChunksRef.current = [];
+        recorder.ondataavailable = evt => {
+          if (evt.data && evt.data.size > 0) {
+            recordingChunksRef.current.push(evt.data);
+          }
+        };
+        recorder.onstop = () => {
+          const parts = recordingChunksRef.current;
+          recordingChunksRef.current = [];
+          mediaRecorderRef.current = null;
+          if (parts.length === 0) {
+            setRecordingState('idle');
+            setRecordingInfo(null);
+            return;
+          }
+          const blob = new Blob(parts, { type: recorder.mimeType || 'video/webm' });
+          void uploadSessionRecording(blob);
+        };
+        recorder.onerror = evt => {
+          console.error('MediaRecorder error:', evt);
+          setRecordingState('error');
+          setRecordingError('Lỗi ghi lại phiên họp trên trình duyệt.');
+        };
+        recorder.start(RECORDING_TIMESLICE_MS);
+        mediaRecorderRef.current = recorder;
+        setRecordingState('recording');
+        setRecordingError(null);
+        setRecordingInfo('Đang live record (video + audio) song song minute ASR.');
+      } catch (err) {
+        console.error('Failed to start MediaRecorder:', err);
+        setRecordingState('error');
+        setRecordingError('Không khởi tạo được recorder cho phiên họp.');
+      }
+    },
+    [meeting?.recording_url, meetingId, uploadSessionRecording],
+  );
 
   const stopAudioCapture = useCallback((message?: string) => {
     if (audioWsRef.current) {
@@ -83,6 +220,7 @@ const MeetingDock = () => {
   }, []);
 
   const stopPreview = useCallback((message?: string) => {
+    stopSessionRecording();
     setPreviewStream(prev => {
       if (prev) {
         prev.getTracks().forEach(track => track.stop());
@@ -90,7 +228,7 @@ const MeetingDock = () => {
       return null;
     });
     stopAudioCapture(message);
-  }, [stopAudioCapture]);
+  }, [stopAudioCapture, stopSessionRecording]);
 
   useEffect(() => {
     if (platformFromQuery === 'gmeet') {
@@ -101,6 +239,13 @@ const MeetingDock = () => {
   useEffect(() => {
     setAudioToken(tokenFromQuery);
   }, [tokenFromQuery]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     document.body.classList.add('sidecar-mode');
@@ -126,49 +271,40 @@ const MeetingDock = () => {
     const track = previewStream.getVideoTracks()[0];
     if (!track) return;
     const handleEnded = () => {
-      stopAudioCapture('Đã dừng chia sẻ tab.');
-      setPreviewStream(null);
+      stopPreview('Đã dừng chia sẻ tab.');
     };
     track.addEventListener('ended', handleEnded);
     return () => {
       track.removeEventListener('ended', handleEnded);
     };
-  }, [previewStream, stopAudioCapture]);
+  }, [previewStream, stopPreview]);
 
   useEffect(() => {
     return () => {
       if (previewStream) {
         previewStream.getTracks().forEach(track => track.stop());
       }
+      stopSessionRecording();
     };
-  }, [previewStream]);
+  }, [previewStream, stopSessionRecording]);
 
   useEffect(() => {
     return () => {
+      stopSessionRecording();
       stopAudioCapture();
     };
-  }, [stopAudioCapture]);
-
-  const fetchMeeting = useCallback(async () => {
-    if (!meetingId) return;
-    setIsLoading(true);
-    setError(null);
-    try {
-      const data = await meetingsApi.get(meetingId);
-      setMeeting(data);
-      setJoinLink(linkFromQuery || data.teams_link || '');
-      setStreamSessionId(sessionFromQuery || data.id);
-    } catch (err) {
-      console.error('Failed to fetch meeting for dock view:', err);
-      setError('Không thể tải cuộc họp (dock view).');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [linkFromQuery, meetingId, sessionFromQuery]);
+  }, [stopAudioCapture, stopSessionRecording]);
 
   useEffect(() => {
     fetchMeeting();
   }, [fetchMeeting]);
+
+  useEffect(() => {
+    if (!meeting?.recording_url) return;
+    setRecordingState('saved');
+    setRecordingError(null);
+    setRecordingInfo('Recording final đã có trên post-meet.');
+  }, [meeting?.recording_url]);
 
   useEffect(() => {
     if (!meeting) return;
@@ -185,7 +321,14 @@ const MeetingDock = () => {
   }, [clearOverride]);
 
   const ensureAudioToken = useCallback(async () => {
-    if (audioToken) return audioToken;
+    if (audioToken) {
+      const payload = decodeJwtPayload(audioToken);
+      const tokenSessionId = typeof payload?.session_id === 'string' ? payload.session_id : null;
+      if (!tokenSessionId || tokenSessionId === streamSessionId) {
+        return audioToken;
+      }
+      setAudioInfo('Token audio không khớp session hiện tại, đang lấy token mới...');
+    }
     if (!streamSessionId) {
       setAudioStatus('error');
       setAudioError('Thiếu session_id để capture audio.');
@@ -242,7 +385,7 @@ const MeetingDock = () => {
     setAudioInfo('Đang kết nối audio ingest...');
     audioStartAckRef.current = false;
 
-    const wsUrl = `${audioWsUrl}?token=${token}&stt=1`;
+    const wsUrl = `${audioWsUrl}?token=${token}`;
     const ws = new WebSocket(wsUrl);
     ws.binaryType = 'arraybuffer';
     audioWsRef.current = ws;
@@ -283,7 +426,7 @@ const MeetingDock = () => {
         processor.connect(ctx.destination);
         audioTracks[0].onended = () => stopAudioCapture('Tab audio đã dừng.');
         setAudioStatus('streaming');
-        setAudioInfo('Đang stream audio tab vào SmartVoice ingest.');
+        setAudioInfo('Đang stream audio tab vào batch recorder (ASR mỗi 30 giây).');
       } catch (err) {
         console.error('AudioContext init failed', err);
         stopAudioCapture('Không khởi tạo được AudioContext để lấy audio tab.');
@@ -341,8 +484,9 @@ const MeetingDock = () => {
   const handleEndMeeting = async () => {
     if (!meetingId) return;
     try {
+      stopPreview();
       await meetingsApi.updatePhase(meetingId, 'post');
-      fetchMeeting();
+      await fetchMeeting();
     } catch (err) {
       console.error('Failed to end meeting:', err);
       setError('Không kết thúc được cuộc họp.');
@@ -379,6 +523,7 @@ const MeetingDock = () => {
         }
         return stream;
       });
+      startSessionRecording(stream);
       if (shouldCaptureAudio) {
         await startAudioCapture(stream);
       } else {
@@ -393,7 +538,7 @@ const MeetingDock = () => {
     } finally {
       setIsPreviewLoading(false);
     }
-  }, [joinPlatform, startAudioCapture, stopAudioCapture]);
+  }, [joinPlatform, startAudioCapture, startSessionRecording, stopAudioCapture]);
 
   useEffect(() => {
     if (autoPreviewRef.current) return;
@@ -449,6 +594,16 @@ const MeetingDock = () => {
         ? 'Đang lấy audio token...'
         : 'Sẵn sàng capture audio'))
     : '';
+  const recordingStatusLabel =
+    recordingState === 'recording'
+      ? 'Đang live record'
+      : recordingState === 'saving'
+      ? 'Đang lưu recording'
+      : recordingState === 'saved'
+      ? 'Recording đã lưu'
+      : recordingState === 'error'
+      ? 'Live record gặp lỗi'
+      : 'Live record chưa bật';
 
   return (
     <div className="sidecar-dock">
@@ -482,6 +637,14 @@ const MeetingDock = () => {
                     {audioError && <span className="sidecar-preview__error">{audioError}</span>}
                   </div>
                 )}
+                <div className="sidecar-preview__note">
+                  <Video size={14} />
+                  <span>{recordingStatusLabel}</span>
+                  {recordingError && <span className="sidecar-preview__error">{recordingError}</span>}
+                  {!recordingError && recordingInfo && (
+                    <span className="sidecar-preview__hint">{recordingInfo}</span>
+                  )}
+                </div>
               </div>
             ) : (
               <div className="sidecar-preview__placeholder">
@@ -489,6 +652,9 @@ const MeetingDock = () => {
                 <span className="sidecar-preview__hint">{previewHint}</span>
                 {previewError && <span className="sidecar-preview__error">{previewError}</span>}
                 {!previewError && audioError && <span className="sidecar-preview__error">{audioError}</span>}
+                {!previewError && !audioError && recordingError && (
+                  <span className="sidecar-preview__error">{recordingError}</span>
+                )}
               </div>
             )}
           </div>
@@ -528,7 +694,7 @@ const MeetingDock = () => {
             meeting={meeting}
             joinPlatform={joinPlatform}
             streamSessionId={streamSessionId || meeting.id}
-            initialAudioIngestToken={tokenFromQuery || undefined}
+            initialAudioIngestToken={audioToken || undefined}
             onRefresh={fetchMeeting}
             onEndMeeting={handleEndMeeting}
           />
