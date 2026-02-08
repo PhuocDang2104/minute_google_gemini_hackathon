@@ -81,6 +81,8 @@ def test_build_state_event_compat_from_window() -> None:
         "payload": {
             "window_id": "w1",
             "revision": 3,
+            "session_kind": "course",
+            "model_name": "gemini-1.5-flash",
             "recap": [
                 {"id": "r1", "text": "A happened."},
                 {"id": "r2", "text": "B happened."},
@@ -88,14 +90,20 @@ def test_build_state_event_compat_from_window() -> None:
             "topics": [
                 {"topic_id": "T9", "title": "Roadmap"},
             ],
+            "actions": [{"task": "action-1"}],
+            "course_highlights": [{"kind": "concept", "title": "Topic A", "bullet": "Remember A"}],
         },
     }
 
     compat = _build_state_event_compat_from_window(event)
     assert compat["event"] == "state"
     payload = compat["payload"]
+    assert payload["session_kind"] == "course"
+    assert payload["model_name"] == "gemini-1.5-flash"
     assert payload["current_topic_id"] == "T9"
     assert payload["topic"]["title"] == "Roadmap"
     assert payload["live_recap"] == "A happened. B happened."
+    assert payload["actions"] == [{"task": "action-1"}]
+    assert payload["course_highlights"][0]["kind"] == "concept"
     assert payload["debug_info"]["window_id"] == "w1"
     assert payload["debug_info"]["revision"] == 3
