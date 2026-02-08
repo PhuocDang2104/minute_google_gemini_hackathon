@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react'
 import { PlusCircle, RefreshCw, Edit2, Trash2, Star, FileText, CheckCircle2, XCircle } from 'lucide-react'
 import { minutesTemplateApi, type MinutesTemplate } from '../../lib/api/minutes_template'
 import TemplateEditor from './Templates/TemplateEditor'
+import { useLocaleText } from '../../i18n/useLocaleText'
 
 const TemplateManagement = () => {
+  const { lt } = useLocaleText()
   const [templates, setTemplates] = useState<MinutesTemplate[]>([])
   const [loading, setLoading] = useState(false)
   const [showEditor, setShowEditor] = useState(false)
@@ -37,7 +39,7 @@ const TemplateManagement = () => {
   }
 
   const handleDelete = async (templateId: string) => {
-    if (!confirm('Bạn có chắc muốn xóa template này?')) return
+    if (!confirm(lt('Bạn có chắc muốn xóa template này?', 'Are you sure you want to delete this template?'))) return
 
     setDeletingId(templateId)
     try {
@@ -45,7 +47,7 @@ const TemplateManagement = () => {
       await loadTemplates()
     } catch (err) {
       console.error('Failed to delete template:', err)
-      alert('Không thể xóa template. Có thể template đang được sử dụng.')
+      alert(lt('Không thể xóa template. Có thể template đang được sử dụng.', 'Cannot delete template. It may be in use.'))
     } finally {
       setDeletingId(null)
     }
@@ -57,7 +59,7 @@ const TemplateManagement = () => {
       await loadTemplates()
     } catch (err) {
       console.error('Failed to set default template:', err)
-      alert('Không thể đặt template mặc định.')
+      alert(lt('Không thể đặt template mặc định.', 'Cannot set default template.'))
     }
   }
 
@@ -76,37 +78,37 @@ const TemplateManagement = () => {
       <div className="page-header">
         <div>
           <p className="page-header__eyebrow">Templates</p>
-          <h1 className="page-header__title">Quản lý Template Biên bản</h1>
+          <h1 className="page-header__title">{lt('Quản lý Template Biên bản', 'Minutes Template Management')}</h1>
           <p className="page-header__subtitle">
-            Tạo và quản lý các template cho biên bản cuộc họp
+            {lt('Tạo và quản lý các template cho biên bản cuộc họp', 'Create and manage templates for meeting minutes')}
           </p>
         </div>
         <div className="page-header__actions">
           <button className="btn btn-outline" onClick={loadTemplates} disabled={loading}>
-            <RefreshCw size={16} style={{ marginRight: 6 }} /> {loading ? 'Đang tải...' : 'Tải lại'}
+            <RefreshCw size={16} style={{ marginRight: 6 }} /> {loading ? lt('Đang tải...', 'Loading...') : lt('Tải lại', 'Reload')}
           </button>
           <button className="btn btn--primary" onClick={handleCreate}>
-            <PlusCircle size={16} style={{ marginRight: 6 }} /> Tạo template
+            <PlusCircle size={16} style={{ marginRight: 6 }} /> {lt('Tạo template', 'Create template')}
           </button>
         </div>
       </div>
 
       <div className="card">
         <div className="card__header">
-          <h3 className="card__title">Danh sách templates</h3>
+          <h3 className="card__title">{lt('Danh sách templates', 'Template list')}</h3>
           <p className="card__subtitle">{templates.length} template{templates.length !== 1 ? 's' : ''}</p>
         </div>
 
         {loading && templates.length === 0 ? (
           <div className="empty-state">
             <FileText className="empty-state__icon" />
-            <h3 className="empty-state__title">Đang tải...</h3>
+            <h3 className="empty-state__title">{lt('Đang tải...', 'Loading...')}</h3>
           </div>
         ) : templates.length === 0 ? (
           <div className="empty-state">
             <FileText className="empty-state__icon" />
-            <h3 className="empty-state__title">Chưa có template nào</h3>
-            <p className="empty-state__description">Bấm "Tạo template" để thêm template mới.</p>
+            <h3 className="empty-state__title">{lt('Chưa có template nào', 'No templates yet')}</h3>
+            <p className="empty-state__description">{lt('Bấm "Tạo template" để thêm template mới.', 'Click "Create template" to add one.')}</p>
           </div>
         ) : (
           <div className="meeting-list">
@@ -121,7 +123,7 @@ const TemplateManagement = () => {
                         style={{ fontSize: '11px', padding: '2px 8px' }}
                       >
                         <Star size={12} style={{ marginRight: 4 }} />
-                        Mặc định
+                        {lt('Mặc định', 'Default')}
                       </span>
                     )}
                     {!template.is_active && (
@@ -130,7 +132,7 @@ const TemplateManagement = () => {
                         style={{ fontSize: '11px', padding: '2px 8px' }}
                       >
                         <XCircle size={12} style={{ marginRight: 4 }} />
-                        Không hoạt động
+                        {lt('Không hoạt động', 'Inactive')}
                       </span>
                     )}
                     {template.is_active && !template.is_default && (
@@ -139,17 +141,17 @@ const TemplateManagement = () => {
                         style={{ fontSize: '11px', padding: '2px 8px' }}
                       >
                         <CheckCircle2 size={12} style={{ marginRight: 4 }} />
-                        Hoạt động
+                        {lt('Hoạt động', 'Active')}
                       </span>
                     )}
                   </div>
                   <div className="meeting-item__meta">
                     {template.code && (
-                      <span className="meeting-item__meta-item">Mã: {template.code}</span>
+                      <span className="meeting-item__meta-item">{lt('Mã', 'Code')}: {template.code}</span>
                     )}
                     {template.meeting_types && template.meeting_types.length > 0 && (
                       <span className="meeting-item__meta-item">
-                        Loại: {template.meeting_types.join(', ')}
+                        {lt('Loại', 'Types')}: {template.meeting_types.join(', ')}
                       </span>
                     )}
                     {template.created_at && (
@@ -178,25 +180,25 @@ const TemplateManagement = () => {
                     <button
                       className="btn btn--ghost btn--sm"
                       onClick={() => handleSetDefault(template.id)}
-                      title="Đặt làm mặc định"
+                      title={lt('Đặt làm mặc định', 'Set as default')}
                     >
                       <Star size={16} />
                     </button>
                   )}
-                  <button
-                    className="btn btn--ghost btn--sm"
-                    onClick={() => handleEdit(template)}
-                    title="Chỉnh sửa"
-                  >
+                    <button
+                      className="btn btn--ghost btn--sm"
+                      onClick={() => handleEdit(template)}
+                      title={lt('Chỉnh sửa', 'Edit')}
+                    >
                     <Edit2 size={16} />
                   </button>
-                  <button
-                    className="btn btn--ghost btn--sm"
-                    onClick={() => handleDelete(template.id)}
-                    disabled={deletingId === template.id}
-                    title="Xóa"
-                    style={{ color: 'var(--danger)' }}
-                  >
+                    <button
+                      className="btn btn--ghost btn--sm"
+                      onClick={() => handleDelete(template.id)}
+                      disabled={deletingId === template.id}
+                      title={lt('Xóa', 'Delete')}
+                      style={{ color: 'var(--danger)' }}
+                    >
                     <Trash2 size={16} />
                   </button>
                 </div>
@@ -218,4 +220,3 @@ const TemplateManagement = () => {
 }
 
 export default TemplateManagement
-

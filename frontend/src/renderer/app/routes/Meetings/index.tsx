@@ -19,12 +19,14 @@ import { USE_API } from '../../../config/env'
 import type { Meeting, MeetingPhase } from '../../../shared/dto/meeting'
 import type { Project } from '../../../shared/dto/project'
 import { Modal } from '../../../components/ui/Modal'
+import { useLocaleText } from '../../../i18n/useLocaleText'
 
 const getSessionTypeLabel = (meeting: Meeting) => (
   meeting.meeting_type === 'study_session' ? 'Course' : 'Meeting'
 )
 
 const Meetings = () => {
+  const { lt } = useLocaleText()
   const [projects, setProjects] = useState<Project[]>([])
   const [meetings, setMeetings] = useState<Meeting[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -119,13 +121,13 @@ const Meetings = () => {
       }
 
       if (meetingFailed) {
-        setError('Không thể tải dữ liệu cuộc họp. Vui lòng thử lại.')
+        setError(lt('Không thể tải dữ liệu cuộc họp. Vui lòng thử lại.', 'Unable to load meeting data. Please try again.'))
       } else if (projectFailed) {
-        setError('Không thể tải danh sách dự án. Các phiên lẻ vẫn hiển thị.')
+        setError(lt('Không thể tải danh sách dự án. Các phiên lẻ vẫn hiển thị.', 'Unable to load projects. Standalone sessions are still shown.'))
       }
     } catch (err) {
       console.error('Failed to load meetings workspace:', err)
-      setError('Không thể tải dữ liệu cuộc họp. Vui lòng thử lại.')
+      setError(lt('Không thể tải dữ liệu cuộc họp. Vui lòng thử lại.', 'Unable to load meeting data. Please try again.'))
     } finally {
       setIsLoading(false)
     }
@@ -136,6 +138,10 @@ const Meetings = () => {
   }, [loadData])
 
   const normalizedSearch = search.trim().toLowerCase()
+  const projectNameById = useMemo(
+    () => new Map(projects.map(project => [project.id, project.name])),
+    [projects],
+  )
 
   const filteredProjects = useMemo(() => {
     if (!normalizedSearch) return projects
@@ -153,12 +159,12 @@ const Meetings = () => {
       meeting.title?.toLowerCase().includes(normalizedSearch)
       || meeting.description?.toLowerCase().includes(normalizedSearch)
       || getSessionTypeLabel(meeting).toLowerCase().includes(normalizedSearch)
+      || (meeting.project_id ? (projectNameById.get(meeting.project_id) || '').toLowerCase().includes(normalizedSearch) : false)
     ))
-  }, [meetings, normalizedSearch])
+  }, [meetings, normalizedSearch, projectNameById])
 
-  const standaloneMeetings = useMemo(() => (
+  const recentMeetings = useMemo(() => (
     filteredMeetings
-      .filter(meeting => !meeting.project_id)
       .sort((a, b) => {
         const timeA = new Date(a.created_at || a.start_time || '').getTime()
         const timeB = new Date(b.created_at || b.start_time || '').getTime()
@@ -192,7 +198,7 @@ const Meetings = () => {
     if (!renameModal) return
     const nextName = renameModal.value.trim()
     if (!nextName) {
-      setRenameError('Vui lòng nhập tên mới.')
+      setRenameError(lt('Vui lòng nhập tên mới.', 'Please enter a new name.'))
       return
     }
     setIsRenaming(true)
@@ -220,14 +226,16 @@ const Meetings = () => {
       closeRenameModal()
     } catch (err) {
       console.error('Rename failed:', err)
-      setRenameError('Không thể đổi tên. Vui lòng thử lại.')
+      setRenameError(lt('Không thể đổi tên. Vui lòng thử lại.', 'Unable to rename. Please try again.'))
     } finally {
       setIsRenaming(false)
     }
   }
 
   const handleDeleteProject = async (project: Project) => {
-    const confirmed = window.confirm(`Xóa dự án "${project.name}"? Hành động này không thể hoàn tác.`)
+    const confirmed = window.confirm(
+      lt(`Xóa dự án "${project.name}"? Hành động này không thể hoàn tác.`, `Delete project "${project.name}"? This action cannot be undone.`),
+    )
     if (!confirmed) {
       closeMenu()
       return
@@ -239,14 +247,16 @@ const Meetings = () => {
       setProjects(prev => prev.filter(p => p.id !== project.id))
     } catch (err) {
       console.error('Delete project failed:', err)
-      setError('Không thể xóa dự án. Vui lòng thử lại.')
+      setError(lt('Không thể xóa dự án. Vui lòng thử lại.', 'Unable to delete project. Please try again.'))
     } finally {
       closeMenu()
     }
   }
 
   const handleDeleteSession = async (meeting: Meeting) => {
-    const confirmed = window.confirm(`Xóa phiên "${meeting.title}"? Hành động này không thể hoàn tác.`)
+    const confirmed = window.confirm(
+      lt(`Xóa phiên "${meeting.title}"? Hành động này không thể hoàn tác.`, `Delete session "${meeting.title}"? This action cannot be undone.`),
+    )
     if (!confirmed) {
       closeMenu()
       return
@@ -258,7 +268,7 @@ const Meetings = () => {
       setMeetings(prev => prev.filter(m => m.id !== meeting.id))
     } catch (err) {
       console.error('Delete session failed:', err)
-      setError('Không thể xóa phiên. Vui lòng thử lại.')
+      setError(lt('Không thể xóa phiên. Vui lòng thử lại.', 'Unable to delete session. Please try again.'))
     } finally {
       closeMenu()
     }
@@ -381,26 +391,27 @@ const Meetings = () => {
 
             {sessionsOpen && (
               <>
-                {standaloneMeetings.length === 0 ? (
+                {recentMeetings.length === 0 ? (
                   <div className="drive-empty">
                     <FileText size={26} />
                     <div>
-                      <h3>Chưa có phiên lẻ</h3>
-                      <p>Tạo mới hoặc gỡ liên kết dự án để hiển thị tại đây.</p>
+                      <h3>{lt('Chưa có phiên nào', 'No sessions yet')}</h3>
+                      <p>{lt('Tất cả phiên sẽ hiển thị tại đây theo thứ tự mới nhất.', 'All sessions will appear here sorted by recency.')}</p>
                     </div>
                   </div>
                 ) : (
                   <div className="drive-table">
                     <div className="drive-table__header">
-                      <div>Name</div>
-                      <div>Type</div>
-                      <div>Ngày tạo</div>
+                      <div>{lt('Tên phiên', 'Session')}</div>
+                      <div>{lt('Loại', 'Type')}</div>
+                      <div>{lt('Ngày tạo', 'Created')}</div>
                       <div></div>
                     </div>
-                    {standaloneMeetings.map(meeting => (
+                    {recentMeetings.map(meeting => (
                       <DriveSuggestedRow
                         key={meeting.id}
                         meeting={meeting}
+                        projectName={meeting.project_id ? projectNameById.get(meeting.project_id) : undefined}
                         isMenuOpen={openMenu?.type === 'session' && openMenu.id === meeting.id}
                         onToggleMenu={() => toggleMenu('session', meeting.id)}
                         onCloseMenu={closeMenu}
@@ -453,6 +464,7 @@ const Meetings = () => {
 
 const DriveSuggestedRow = ({
   meeting,
+  projectName,
   isMenuOpen,
   onToggleMenu,
   onCloseMenu,
@@ -460,6 +472,7 @@ const DriveSuggestedRow = ({
   onRemove,
 }: {
   meeting: Meeting
+  projectName?: string
   isMenuOpen: boolean
   onToggleMenu: () => void
   onCloseMenu: () => void
@@ -473,6 +486,7 @@ const DriveSuggestedRow = ({
   const typeLabel = getSessionTypeLabel(meeting)
   const createdLabel = formatDate(createdDate)
   const Icon = isCourse ? BookOpen : Users
+  const { lt } = useLocaleText()
 
   return (
     <Link to={`/app/meetings/${meeting.id}/detail`} className="drive-table__row">
@@ -483,6 +497,12 @@ const DriveSuggestedRow = ({
           </div>
           <div>
             <div className="drive-file-title">{meeting.title}</div>
+            {projectName && (
+              <div className="drive-file-meta drive-file-meta--project">
+                <FolderOpen size={12} />
+                <span>{lt('Dự án', 'Project')}: {projectName}</span>
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -15,6 +15,7 @@ import { USE_API } from '../../../config/env'
 import type { Project } from '../../../shared/dto/project'
 import { Modal } from '../../../components/ui/Modal'
 import { meetings as mockMeetings } from '../../../store/mockData'
+import { useLocaleText } from '../../../i18n/useLocaleText'
 
 const palette = [
   { hue: '#f7a745', bg: 'linear-gradient(135deg, rgba(247, 167, 69, 0.2), rgba(247, 167, 69, 0.02))' },
@@ -34,6 +35,7 @@ const getPalette = (key: string) => {
 
 const Projects = () => {
   const navigate = useNavigate()
+  const { lt } = useLocaleText()
   const [projects, setProjects] = useState<Project[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -83,11 +85,11 @@ const Projects = () => {
       setStandaloneCount(Math.max(0, total - grouped))
     } catch (err) {
       console.error('Failed to load projects:', err)
-      setError('Không thể tải danh sách dự án. Vui lòng thử lại.')
+      setError(lt('Không thể tải danh sách dự án. Vui lòng thử lại.', 'Unable to load project list. Please try again.'))
     } finally {
       setIsLoading(false)
     }
-  }, [search])
+  }, [lt, search])
 
   useEffect(() => {
     loadProjects()
@@ -107,15 +109,15 @@ const Projects = () => {
       setProjects(prev => [created, ...prev])
     } catch (err) {
       console.error('Create project failed:', err)
-      setError('Không thể tạo dự án. Vui lòng thử lại.')
+      setError(lt('Không thể tạo dự án. Vui lòng thử lại.', 'Unable to create project. Please try again.'))
     }
   }
 
   const heroStats = useMemo(() => ([
-    { label: 'Dự án', value: totalProjects },
-    { label: 'Phiên', value: totalMeetings },
-    { label: 'Tài liệu', value: totalDocuments },
-  ]), [totalProjects, totalMeetings, totalDocuments])
+    { label: lt('Dự án', 'Projects'), value: totalProjects },
+    { label: lt('Phiên', 'Sessions'), value: totalMeetings },
+    { label: lt('Tài liệu', 'Documents'), value: totalDocuments },
+  ]), [lt, totalProjects, totalMeetings, totalDocuments])
 
   return (
     <div className="projects-page">
@@ -125,16 +127,16 @@ const Projects = () => {
             <Sparkles size={14} />
             Workspace
           </div>
-          <h1>Dự án</h1>
-          <p>Tạo không gian làm việc theo dòng dự án, tổ chức phiên họp và quản lý tài liệu tập trung.</p>
+          <h1>{lt('Dự án', 'Projects')}</h1>
+          <p>{lt('Tạo không gian làm việc theo dòng dự án, tổ chức phiên họp và quản lý tài liệu tập trung.', 'Create focused workspaces for projects, sessions, and documents.')}</p>
           <div className="projects-hero__actions">
             <button className="btn btn--primary" onClick={() => setShowCreateModal(true)}>
               <Plus size={16} />
-              Tạo dự án
+              {lt('Tạo dự án', 'Create project')}
             </button>
             <button className="btn btn--secondary" onClick={() => navigate('/app/meetings')}>
               <FolderOpen size={16} />
-              Xem tất cả phiên
+              {lt('Xem tất cả phiên', 'View all sessions')}
             </button>
           </div>
         </div>
@@ -154,10 +156,10 @@ const Projects = () => {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Tìm theo tên dự án, mã code..."
+            placeholder={lt('Tìm theo tên dự án, mã code...', 'Search by project name or code...')}
           />
         </div>
-        <button className="btn btn--ghost" onClick={loadProjects} title="Làm mới" disabled={isLoading}>
+        <button className="btn btn--ghost" onClick={loadProjects} title={lt('Làm mới', 'Refresh')} disabled={isLoading}>
           <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
         </button>
       </section>
@@ -171,7 +173,7 @@ const Projects = () => {
       {isLoading && (
         <div className="projects-loading">
           <div className="spinner" style={{ width: 32, height: 32 }}></div>
-          <p>Đang tải dự án...</p>
+          <p>{lt('Đang tải dự án...', 'Loading projects...')}</p>
         </div>
       )}
 
@@ -182,19 +184,19 @@ const Projects = () => {
               <div className="project-card__icon">
                 <FolderOpen size={20} />
               </div>
-              <span>Phiên lẻ</span>
+              <span>{lt('Phiên lẻ', 'Standalone')}</span>
             </div>
             <div className="project-card__body">
-              <h3>Phiên làm việc độc lập</h3>
-              <p>Các phiên chưa thuộc bất kỳ dự án nào.</p>
+              <h3>{lt('Phiên làm việc độc lập', 'Standalone sessions')}</h3>
+              <p>{lt('Các phiên chưa thuộc bất kỳ dự án nào.', 'Sessions not yet linked to any project.')}</p>
               <div className="project-card__stats">
                 <span>
                   <Calendar size={14} />
-                  {standaloneCount} phiên
+                  {standaloneCount} {lt('phiên', 'sessions')}
                 </span>
               </div>
               <button className="btn btn--secondary" onClick={() => navigate('/app/meetings')}>
-                Xem danh sách
+                {lt('Xem danh sách', 'View list')}
               </button>
             </div>
           </div>
@@ -216,18 +218,18 @@ const Projects = () => {
                 </div>
                 <div className="project-card__body">
                   <h3>{project.name}</h3>
-                  <p>{project.description || 'Chưa có mô tả. Bạn có thể cập nhật thêm.'}</p>
+                  <p>{project.description || lt('Chưa có mô tả. Bạn có thể cập nhật thêm.', 'No description yet. You can update this project.')}</p>
                   <div className="project-card__stats">
                     <span>
                       <Calendar size={14} />
-                      {project.meeting_count ?? 0} phiên
+                      {project.meeting_count ?? 0} {lt('phiên', 'sessions')}
                     </span>
                     <span>
                       <FileText size={14} />
-                      {project.document_count ?? 0} tài liệu
+                      {project.document_count ?? 0} {lt('tài liệu', 'documents')}
                     </span>
                   </div>
-                  <div className="project-card__cta">Mở dự án</div>
+                  <div className="project-card__cta">{lt('Mở dự án', 'Open project')}</div>
                 </div>
               </Link>
             )
@@ -238,21 +240,21 @@ const Projects = () => {
       <Modal
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
-        title="Tạo dự án mới"
+        title={lt('Tạo dự án mới', 'Create new project')}
         size="lg"
       >
         <div className="project-modal">
           <div className="project-modal__grid">
             <label>
-              <span>Tên dự án *</span>
+              <span>{lt('Tên dự án *', 'Project name *')}</span>
               <input
                 value={createForm.name}
                 onChange={(e) => setCreateForm(prev => ({ ...prev, name: e.target.value }))}
-                placeholder="VD: Core Banking Modernization"
+                placeholder={lt('VD: Core Banking Modernization', 'e.g. Core Banking Modernization')}
               />
             </label>
             <label>
-              <span>Mã dự án</span>
+              <span>{lt('Mã dự án', 'Project code')}</span>
               <input
                 value={createForm.code}
                 onChange={(e) => setCreateForm(prev => ({ ...prev, code: e.target.value }))}
@@ -260,30 +262,30 @@ const Projects = () => {
               />
             </label>
             <label className="project-modal__full">
-              <span>Mô tả</span>
+              <span>{lt('Mô tả', 'Description')}</span>
               <textarea
                 rows={3}
                 value={createForm.description}
                 onChange={(e) => setCreateForm(prev => ({ ...prev, description: e.target.value }))}
-                placeholder="Tóm tắt dự án, pháp vi, stakeholder..."
+                placeholder={lt('Tóm tắt dự án, pháp vi, stakeholder...', 'Project summary, scope, stakeholders...')}
               />
             </label>
             <label className="project-modal__full">
-              <span>Mục tiêu</span>
+              <span>{lt('Mục tiêu', 'Objective')}</span>
               <textarea
                 rows={3}
                 value={createForm.objective}
                 onChange={(e) => setCreateForm(prev => ({ ...prev, objective: e.target.value }))}
-                placeholder="Mô tả các OKR, goal chính..."
+                placeholder={lt('Mô tả các OKR, goal chính...', 'Describe key OKRs and goals...')}
               />
             </label>
           </div>
           <div className="project-modal__actions">
             <button className="btn btn--secondary" onClick={() => setShowCreateModal(false)}>
-              Hủy
+              {lt('Hủy', 'Cancel')}
             </button>
             <button className="btn btn--primary" onClick={handleCreateProject} disabled={!createForm.name.trim()}>
-              Tạo dự án
+              {lt('Tạo dự án', 'Create project')}
             </button>
           </div>
         </div>

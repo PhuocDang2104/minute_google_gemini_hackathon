@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { minutesTemplateApi, type MinutesTemplate, type MinutesTemplateCreate, type MinutesTemplateUpdate } from '../../../lib/api/minutes_template'
+import { useLocaleText } from '../../../i18n/useLocaleText'
 
 type TemplateEditorProps = {
   template: MinutesTemplate | null // null = create new, non-null = edit
@@ -41,6 +42,7 @@ const DEFAULT_STRUCTURE = {
 }
 
 const TemplateEditor = ({ template, onClose, onSuccess }: TemplateEditorProps) => {
+  const { lt } = useLocaleText()
   const isEdit = template !== null
 
   const [form, setForm] = useState({
@@ -115,12 +117,12 @@ const TemplateEditor = ({ template, onClose, onSuccess }: TemplateEditorProps) =
 
   const handleSubmit = async () => {
     if (!form.name.trim()) {
-      alert('Vui lòng nhập tên template')
+      alert(lt('Vui lòng nhập tên template', 'Please enter template name'))
       return
     }
 
     if (!validateJson(structureJson)) {
-      alert('Structure JSON không hợp lệ. Vui lòng kiểm tra lại.')
+      alert(lt('Structure JSON không hợp lệ. Vui lòng kiểm tra lại.', 'Invalid JSON structure. Please review.'))
       return
     }
 
@@ -154,7 +156,7 @@ const TemplateEditor = ({ template, onClose, onSuccess }: TemplateEditorProps) =
       onSuccess()
     } catch (err: any) {
       console.error('Failed to save template:', err)
-      alert(`Không thể lưu template: ${err.message || 'Unknown error'}`)
+      alert(lt(`Không thể lưu template: ${err.message || 'Unknown error'}`, `Failed to save template: ${err.message || 'Unknown error'}`))
     } finally {
       setSaving(false)
     }
@@ -168,7 +170,7 @@ const TemplateEditor = ({ template, onClose, onSuccess }: TemplateEditorProps) =
         style={{ width: 800, maxHeight: '90vh', overflowY: 'auto' }}
       >
         <div className="modal__header">
-          <h3 className="modal__title">{isEdit ? 'Chỉnh sửa Template' : 'Tạo Template Mới'}</h3>
+          <h3 className="modal__title">{isEdit ? lt('Chỉnh sửa Template', 'Edit Template') : lt('Tạo Template Mới', 'Create Template')}</h3>
           <button className="modal__close" onClick={onClose}>
             ×
           </button>
@@ -179,21 +181,21 @@ const TemplateEditor = ({ template, onClose, onSuccess }: TemplateEditorProps) =
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div className="form-group">
               <label className="form-label">
-                Tên template <span style={{ color: 'var(--danger)' }}>*</span>
+                {lt('Tên template', 'Template name')} <span style={{ color: 'var(--danger)' }}>*</span>
               </label>
               <input
                 className="form-input"
-                placeholder="VD: Biên bản Họp Thường kỳ"
+                placeholder={lt('VD: Biên bản Họp Thường kỳ', 'e.g. Weekly Meeting Minutes')}
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
               />
             </div>
 
             <div className="form-group">
-              <label className="form-label">Mã template</label>
+              <label className="form-label">{lt('Mã template', 'Template code')}</label>
               <input
                 className="form-input"
-                placeholder="VD: DEFAULT_TEMPLATE"
+                placeholder={lt('VD: DEFAULT_TEMPLATE', 'e.g. DEFAULT_TEMPLATE')}
                 value={form.code}
                 onChange={(e) => setForm({ ...form, code: e.target.value })}
               />
@@ -201,11 +203,11 @@ const TemplateEditor = ({ template, onClose, onSuccess }: TemplateEditorProps) =
           </div>
 
           <div className="form-group">
-            <label className="form-label">Mô tả</label>
+            <label className="form-label">{lt('Mô tả', 'Description')}</label>
             <textarea
               className="form-textarea"
               rows={2}
-              placeholder="Mô tả về template này..."
+              placeholder={lt('Mô tả về template này...', 'Describe this template...')}
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
             />
@@ -213,11 +215,11 @@ const TemplateEditor = ({ template, onClose, onSuccess }: TemplateEditorProps) =
 
           {/* Meeting Types */}
           <div className="form-group">
-            <label className="form-label">Loại cuộc họp (optional)</label>
+            <label className="form-label">{lt('Loại cuộc họp (optional)', 'Meeting types (optional)')}</label>
             <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
               <input
                 className="form-input"
-                placeholder="VD: board, weekly, planning"
+                placeholder={lt('VD: board, weekly, planning', 'e.g. board, weekly, planning')}
                 value={meetingTypeInput}
                 onChange={(e) => setMeetingTypeInput(e.target.value)}
                 onKeyPress={(e) => {
@@ -228,7 +230,7 @@ const TemplateEditor = ({ template, onClose, onSuccess }: TemplateEditorProps) =
                 }}
               />
               <button className="btn btn-outline" onClick={handleAddMeetingType}>
-                Thêm
+                {lt('Thêm', 'Add')}
               </button>
             </div>
             {form.meeting_types.length > 0 && (
@@ -264,7 +266,7 @@ const TemplateEditor = ({ template, onClose, onSuccess }: TemplateEditorProps) =
                 checked={form.is_active}
                 onChange={(e) => setForm({ ...form, is_active: e.target.checked })}
               />
-              <span>Hoạt động</span>
+              <span>{lt('Hoạt động', 'Active')}</span>
             </label>
             <label className="form-checkbox">
               <input
@@ -272,7 +274,7 @@ const TemplateEditor = ({ template, onClose, onSuccess }: TemplateEditorProps) =
                 checked={form.is_default}
                 onChange={(e) => setForm({ ...form, is_default: e.target.checked })}
               />
-              <span>Đặt làm mặc định</span>
+              <span>{lt('Đặt làm mặc định', 'Set as default')}</span>
             </label>
           </div>
 
@@ -285,7 +287,7 @@ const TemplateEditor = ({ template, onClose, onSuccess }: TemplateEditorProps) =
               className="form-textarea"
               rows={15}
               style={{
-                fontFamily: 'monospace',
+                fontFamily: 'var(--font-mono)',
                 fontSize: '13px',
                 lineHeight: '1.5',
                 ...(jsonError ? { borderColor: 'var(--danger)' } : {}),
@@ -298,22 +300,24 @@ const TemplateEditor = ({ template, onClose, onSuccess }: TemplateEditorProps) =
               <div style={{ color: 'var(--danger)', fontSize: '12px', marginTop: 4 }}>⚠️ {jsonError}</div>
             )}
             <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: 4 }}>
-              Structure JSON định nghĩa các sections và fields của template. Xem example trong migration file để
-              tham khảo.
+              {lt(
+                'Structure JSON định nghĩa các sections và fields của template. Xem example trong migration file để tham khảo.',
+                'JSON structure defines template sections and fields. Refer to migration examples for guidance.',
+              )}
             </div>
           </div>
         </div>
 
         <div className="modal__footer">
           <button className="btn btn--ghost" onClick={onClose} disabled={saving}>
-            Hủy
+            {lt('Hủy', 'Cancel')}
           </button>
           <button
             className="btn btn--primary"
             disabled={saving || !form.name.trim() || !!jsonError}
             onClick={handleSubmit}
           >
-            {saving ? 'Đang lưu...' : isEdit ? 'Cập nhật' : 'Tạo template'}
+            {saving ? lt('Đang lưu...', 'Saving...') : isEdit ? lt('Cập nhật', 'Update') : lt('Tạo template', 'Create template')}
           </button>
         </div>
       </div>
@@ -322,4 +326,3 @@ const TemplateEditor = ({ template, onClose, onSuccess }: TemplateEditorProps) =
 }
 
 export default TemplateEditor
-

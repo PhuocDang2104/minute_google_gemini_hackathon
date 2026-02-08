@@ -79,10 +79,10 @@ export const AIAssistantPanel = ({ meetingId }: AIAssistantPanelProps) => {
   };
 
   const SUGGESTED_QUESTIONS = [
-    'Data retention policy theo NHNN là bao nhiêu năm?',
-    'Các security requirements cho Core Banking là gì?',
-    'CR-2024-015 đã được approve chưa?',
-    'Những risks chính của dự án LOS là gì?',
+    'Recap phiên hiện tại: 3 điểm chính, 2 rủi ro, 1 quyết định quan trọng.',
+    'Action items nào đã có owner nhưng chưa có deadline rõ?',
+    'Quyết định nào cần bằng chứng bổ sung từ tài liệu đã upload?',
+    'Đề xuất follow-up trong 24h tới theo mức độ ưu tiên.',
   ];
 
   return (
@@ -93,7 +93,7 @@ export const AIAssistantPanel = ({ meetingId }: AIAssistantPanelProps) => {
           <h3>Minute AI Assistant</h3>
         </div>
         <p className="ai-assistant__subtitle">
-          Hỏi bất cứ điều gì về dự án, policy, hoặc context cuộc họp
+          Hỏi theo context cuộc họp/dự án với câu trả lời ưu tiên bằng chứng
         </p>
       </div>
 
@@ -190,7 +190,7 @@ export const AIAssistantPanel = ({ meetingId }: AIAssistantPanelProps) => {
       <form className="ai-assistant__input" onSubmit={handleSubmit}>
         <input
           type="text"
-          placeholder="Hỏi về policy, tài liệu, hoặc context cuộc họp..."
+          placeholder="Hỏi về recap, decision, action, risk hoặc policy liên quan..."
           value={query}
           onChange={e => setQuery(e.target.value)}
           disabled={isLoading}
@@ -230,4 +230,3 @@ const CitationCard = ({ citation }: { citation: Citation }) => {
 };
 
 export default AIAssistantPanel;
-

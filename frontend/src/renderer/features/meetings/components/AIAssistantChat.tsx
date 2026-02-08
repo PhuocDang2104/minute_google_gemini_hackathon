@@ -18,10 +18,10 @@ interface AIAssistantChatProps {
 }
 
 const quickPrompts = [
-  'Tóm tắt nhanh 30s gần nhất và rủi ro chính?',
-  'Có action item nào cần confirm không?',
-  'Có tài liệu nội bộ nào liên quan topic hiện tại?',
-  'Cần tạo lịch follow-up cho ai và khi nào?',
+  'Recap 5 phút gần nhất: điểm thống nhất, điểm còn mở, và rủi ro chính.',
+  'Liệt kê action items mới theo owner, deadline, priority.',
+  'Những quyết định nào đã chốt? Nêu lý do và bằng chứng liên quan.',
+  'Đề xuất email follow-up ngắn cho stakeholder với next steps rõ ràng.',
 ];
 
 export const AIAssistantChat = ({ meetingId, meetingTitle }: AIAssistantChatProps) => {
@@ -224,7 +224,7 @@ export const AIAssistantChat = ({ meetingId, meetingTitle }: AIAssistantChatProp
 
           <div className="ai-chatbox__input">
             <textarea
-              placeholder="Hỏi AI về recap, ADR, policy nội bộ..."
+              placeholder="Hỏi về recap, decision, action item hoặc tài liệu liên quan..."
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => {

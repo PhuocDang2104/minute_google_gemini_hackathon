@@ -11,11 +11,11 @@ import {
   Edit3,
   Upload,
   AlertCircle,
+  Trash2,
 } from 'lucide-react'
 import { projectsApi } from '../../../lib/api/projects'
 import { meetingsApi } from '../../../lib/api/meetings'
 import { knowledgeApi, type KnowledgeDocument } from '../../../lib/api/knowledge'
-import { formatDate, formatTime } from '../../../store/mockData'
 import { Modal } from '../../../components/ui/Modal'
 import { UploadDocumentModal } from '../../../components/UploadDocumentModal'
 import type { Project } from '../../../shared/dto/project'
@@ -23,6 +23,7 @@ import type { Meeting } from '../../../shared/dto/meeting'
 import { useChatContext } from '../../../contexts/ChatContext'
 import CreateMeetingForm from '../../../features/meetings/components/CreateMeetingForm'
 import { USE_API } from '../../../config/env'
+import { useLocaleText } from '../../../i18n/useLocaleText'
 
 type TabKey = 'overview' | 'meetings' | 'documents'
 
@@ -30,6 +31,7 @@ const ProjectDetail = () => {
   const { projectId } = useParams<{ projectId: string }>()
   const navigate = useNavigate()
   const { setOverride, clearOverride } = useChatContext()
+  const { lt, dateLocale, timeLocale } = useLocaleText()
 
   const [project, setProject] = useState<Project | null>(null)
   const [meetings, setMeetings] = useState<Meeting[]>([])
@@ -45,6 +47,7 @@ const ProjectDetail = () => {
   const [renameMeetingValue, setRenameMeetingValue] = useState('')
   const [renameMeetingError, setRenameMeetingError] = useState<string | null>(null)
   const [isRenamingMeeting, setIsRenamingMeeting] = useState(false)
+  const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null)
 
   const [editForm, setEditForm] = useState({
     name: '',
@@ -96,7 +99,7 @@ const ProjectDetail = () => {
       })
     } catch (err) {
       console.error('Failed to load project detail:', err)
-      setError('Không thể tải thông tin dự án.')
+      setError(lt('Không thể tải thông tin dự án.', 'Unable to load project detail.'))
     } finally {
       setIsLoading(false)
     }
@@ -144,14 +147,16 @@ const ProjectDetail = () => {
       setRenameMeetingModal(null)
     } catch (err) {
       console.error('Rename meeting failed:', err)
-      setRenameMeetingError('Không thể đổi tên phiên. Vui lòng thử lại.')
+      setRenameMeetingError(lt('Không thể đổi tên phiên. Vui lòng thử lại.', 'Unable to rename session. Please try again.'))
     } finally {
       setIsRenamingMeeting(false)
     }
   }
 
   const handleDeleteMeeting = async (meeting: Meeting) => {
-    const confirmed = window.confirm(`Xóa phiên "${meeting.title}"? Hành động này không thể hoàn tác.`)
+    const confirmed = window.confirm(
+      lt(`Xóa phiên "${meeting.title}"? Hành động này không thể hoàn tác.`, `Delete session "${meeting.title}"? This action cannot be undone.`),
+    )
     if (!confirmed) {
       setOpenMeetingMenuId(null)
       return
@@ -168,7 +173,7 @@ const ProjectDetail = () => {
       })
     } catch (err) {
       console.error('Delete meeting failed:', err)
-      setError('Không thể xóa phiên. Vui lòng thử lại.')
+      setError(lt('Không thể xóa phiên. Vui lòng thử lại.', 'Unable to delete session. Please try again.'))
     } finally {
       setOpenMeetingMenuId(null)
     }
@@ -187,7 +192,31 @@ const ProjectDetail = () => {
       setShowEditModal(false)
     } catch (err) {
       console.error('Failed to update project:', err)
-      setError('Không thể cập nhật dự án.')
+      setError(lt('Không thể cập nhật dự án.', 'Unable to update project.'))
+    }
+  }
+
+  const handleDeleteDocument = async (doc: KnowledgeDocument) => {
+    const confirmed = window.confirm(
+      lt(`Xóa tài liệu "${doc.title}"? Hành động này không thể hoàn tác.`, `Delete document "${doc.title}"? This action cannot be undone.`),
+    )
+    if (!confirmed) return
+    setDeletingDocumentId(doc.id)
+    try {
+      if (USE_API) {
+        await knowledgeApi.delete(doc.id)
+      }
+      setDocuments(prev => prev.filter(d => d.id !== doc.id))
+      setProject(prev => {
+        if (!prev) return prev
+        const current = prev.document_count ?? documents.length
+        return { ...prev, document_count: Math.max(0, current - 1) }
+      })
+    } catch (err) {
+      console.error('Delete document failed:', err)
+      setError(lt('Không thể xóa tài liệu. Vui lòng thử lại.', 'Unable to delete document. Please try again.'))
+    } finally {
+      setDeletingDocumentId(null)
     }
   }
 
@@ -195,7 +224,7 @@ const ProjectDetail = () => {
     return (
       <div className="project-detail__loading">
         <div className="spinner" style={{ width: 32, height: 32 }}></div>
-        <p>Đang tải dự án...</p>
+        <p>{lt('Đang tải dự án...', 'Loading project...')}</p>
       </div>
     )
   }
@@ -204,9 +233,9 @@ const ProjectDetail = () => {
     return (
       <div className="empty-state">
         <AlertCircle className="empty-state__icon" />
-        <h3 className="empty-state__title">{error || 'Không tìm thấy dự án'}</h3>
+        <h3 className="empty-state__title">{error || lt('Không tìm thấy dự án', 'Project not found')}</h3>
         <button className="btn btn--secondary" onClick={() => navigate('/app/meetings')}>
-          Quay lại
+          {lt('Quay lại', 'Back')}
         </button>
       </div>
     )
@@ -221,23 +250,23 @@ const ProjectDetail = () => {
         <div className="project-detail__info">
           <div className="project-detail__eyebrow">
             <FolderOpen size={14} />
-            {project.code || 'Dự án'}
+            {project.code || lt('Dự án', 'Project')}
           </div>
           <h1>{project.name}</h1>
-          <p>{project.description || 'Chưa có mô tả. Bạn có thể cập nhật thêm.'}</p>
+          <p>{project.description || lt('Chưa có mô tả. Bạn có thể cập nhật thêm.', 'No description yet. You can update it.')}</p>
         </div>
         <div className="project-detail__actions">
           <button className="btn btn--secondary" onClick={() => setShowUploadModal(true)}>
             <Upload size={16} />
-            Tải tài liệu
+            {lt('Tải tài liệu', 'Upload document')}
           </button>
           <button className="btn btn--secondary" onClick={() => setShowEditModal(true)}>
             <Edit3 size={16} />
-            Chỉnh sửa
+            {lt('Chỉnh sửa', 'Edit')}
           </button>
           <button className="btn btn--primary" onClick={() => setShowCreateMeetingModal(true)}>
             <Plus size={16} />
-            Tạo phiên
+            {lt('Tạo phiên', 'Create session')}
           </button>
         </div>
       </header>
@@ -247,40 +276,40 @@ const ProjectDetail = () => {
           <Calendar size={16} />
           <div>
             <span>{stats.meetings}</span>
-            <small>Phiên họp</small>
+            <small>{lt('Phiên họp', 'Sessions')}</small>
           </div>
         </div>
         <div className="project-stat">
           <FileText size={16} />
           <div>
             <span>{stats.documents}</span>
-            <small>Tài liệu</small>
+            <small>{lt('Tài liệu', 'Documents')}</small>
           </div>
         </div>
       </section>
 
       <div className="project-tabs">
         <button className={activeTab === 'overview' ? 'active' : ''} onClick={() => setActiveTab('overview')}>
-          Tổng quan
+          {lt('Tổng quan', 'Overview')}
         </button>
         <button className={activeTab === 'meetings' ? 'active' : ''} onClick={() => setActiveTab('meetings')}>
-          Phiên họp
+          {lt('Phiên họp', 'Sessions')}
         </button>
         <button className={activeTab === 'documents' ? 'active' : ''} onClick={() => setActiveTab('documents')}>
-          Tài liệu
+          {lt('Tài liệu', 'Documents')}
         </button>
       </div>
 
       {activeTab === 'overview' && (
         <div className="project-overview">
           <div className="project-overview__card">
-            <h3>Mục tiêu dự án</h3>
-            <p>{project.objective || 'Chưa có mục tiêu cụ thể. Hãy bổ sung để đội ngũ thống nhất hướng đi.'}</p>
+            <h3>{lt('Mục tiêu dự án', 'Project objective')}</h3>
+            <p>{project.objective || lt('Chưa có mục tiêu cụ thể. Hãy bổ sung để đội ngũ thống nhất hướng đi.', 'No objective yet. Add one to align the team.')}</p>
           </div>
           <div className="project-overview__card">
-            <h3>Phiên họp gần đây</h3>
+            <h3>{lt('Phiên họp gần đây', 'Recent sessions')}</h3>
             {meetings.length === 0 ? (
-              <div className="project-empty">Chưa có phiên nào. Tạo phiên đầu tiên cho dự án.</div>
+              <div className="project-empty">{lt('Chưa có phiên nào. Tạo phiên đầu tiên cho dự án.', 'No sessions yet. Create the first one for this project.')}</div>
             ) : (
               <div className="project-list">
                 {meetings.slice(0, 4).map(meeting => (
@@ -288,11 +317,13 @@ const ProjectDetail = () => {
                     <div>
                       <div className="project-list__title">{meeting.title}</div>
                       <div className="project-list__meta">
-                        {meeting.start_time ? `${formatDate(new Date(meeting.start_time))} · ${formatTime(new Date(meeting.start_time))}` : 'Chưa có thời gian'}
+                        {meeting.start_time
+                          ? `${new Date(meeting.start_time).toLocaleDateString(dateLocale)} · ${new Date(meeting.start_time).toLocaleTimeString(timeLocale, { hour: '2-digit', minute: '2-digit' })}`
+                          : lt('Chưa có thời gian', 'No schedule yet')}
                       </div>
                     </div>
                     <div className="project-list__actions">
-                      <span className="project-list__cta">Mở</span>
+                      <span className="project-list__cta">{lt('Mở', 'Open')}</span>
                       <div
                         className="drive-menu-wrapper"
                         onClick={(e) => {
@@ -303,7 +334,7 @@ const ProjectDetail = () => {
                         <button
                           type="button"
                           className="drive-menu-trigger"
-                          aria-label="Session menu"
+                          aria-label={lt('Menu phiên', 'Session menu')}
                           onClick={(e) => {
                             e.preventDefault()
                             e.stopPropagation()
@@ -327,9 +358,9 @@ const ProjectDetail = () => {
             )}
           </div>
           <div className="project-overview__card">
-            <h3>Tài liệu chính</h3>
+            <h3>{lt('Tài liệu chính', 'Main documents')}</h3>
             {documents.length === 0 ? (
-              <div className="project-empty">Chưa có tài liệu. Tải lên để dùng cho RAG và recap.</div>
+              <div className="project-empty">{lt('Chưa có tài liệu. Tải lên để dùng cho RAG và recap.', 'No documents yet. Upload to use for RAG and recap.')}</div>
             ) : (
               <div className="project-list">
                 {documents.slice(0, 4).map(doc => (
@@ -338,11 +369,24 @@ const ProjectDetail = () => {
                       <div className="project-list__title">{doc.title}</div>
                       <div className="project-list__meta">{doc.category || doc.source}</div>
                     </div>
-                    {doc.file_url && (
-                      <a className="project-list__cta" href={doc.file_url} target="_blank" rel="noreferrer">
-                        Mở
-                      </a>
-                    )}
+                    <div className="project-list__actions">
+                      {doc.file_url ? (
+                        <a className="project-list__cta" href={doc.file_url} target="_blank" rel="noreferrer">
+                          {lt('Mở', 'Open')}
+                        </a>
+                      ) : (
+                        <span className="project-list__meta">{lt('Không có link', 'No link')}</span>
+                      )}
+                      <button
+                        type="button"
+                        className="project-list__icon-action project-list__icon-action--danger"
+                        title={lt('Xóa', 'Delete')}
+                        onClick={() => handleDeleteDocument(doc)}
+                        disabled={deletingDocumentId === doc.id}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -354,14 +398,14 @@ const ProjectDetail = () => {
       {activeTab === 'meetings' && (
         <div className="project-panel">
           <div className="project-panel__header">
-            <h3>Danh sách phiên họp</h3>
+            <h3>{lt('Danh sách phiên họp', 'Session list')}</h3>
             <button className="btn btn--secondary" onClick={() => setShowCreateMeetingModal(true)}>
               <Plus size={14} />
-              Tạo phiên
+              {lt('Tạo phiên', 'Create session')}
             </button>
           </div>
           {meetings.length === 0 ? (
-            <div className="project-empty">Chưa có phiên nào.</div>
+            <div className="project-empty">{lt('Chưa có phiên nào.', 'No sessions yet.')}</div>
           ) : (
             <div className="project-table">
               {meetings.map(meeting => (
@@ -369,7 +413,9 @@ const ProjectDetail = () => {
                   <div>
                     <div className="project-table__title">{meeting.title}</div>
                     <div className="project-table__meta">
-                      {meeting.start_time ? `${formatDate(new Date(meeting.start_time))} · ${formatTime(new Date(meeting.start_time))}` : 'Chưa có thời gian'}
+                      {meeting.start_time
+                        ? `${new Date(meeting.start_time).toLocaleDateString(dateLocale)} · ${new Date(meeting.start_time).toLocaleTimeString(timeLocale, { hour: '2-digit', minute: '2-digit' })}`
+                        : lt('Chưa có thời gian', 'No schedule yet')}
                     </div>
                   </div>
                   <div className="project-table__actions">
@@ -384,7 +430,7 @@ const ProjectDetail = () => {
                       <button
                         type="button"
                         className="drive-menu-trigger"
-                        aria-label="Session menu"
+                        aria-label={lt('Menu phiên', 'Session menu')}
                         onClick={(e) => {
                           e.preventDefault()
                           e.stopPropagation()
@@ -412,14 +458,14 @@ const ProjectDetail = () => {
       {activeTab === 'documents' && (
         <div className="project-panel">
           <div className="project-panel__header">
-            <h3>Kho tài liệu dự án</h3>
+            <h3>{lt('Kho tài liệu dự án', 'Project document hub')}</h3>
             <button className="btn btn--secondary" onClick={() => setShowUploadModal(true)}>
               <Upload size={14} />
-              Tải tài liệu
+              {lt('Tải tài liệu', 'Upload document')}
             </button>
           </div>
           {documents.length === 0 ? (
-            <div className="project-empty">Chưa có tài liệu nào.</div>
+            <div className="project-empty">{lt('Chưa có tài liệu nào.', 'No documents yet.')}</div>
           ) : (
             <div className="project-docs">
               {documents.map(doc => (
@@ -429,16 +475,27 @@ const ProjectDetail = () => {
                     <span>{doc.category || doc.source}</span>
                   </div>
                   <h4>{doc.title}</h4>
-                  <p>{doc.description || 'Chưa có mô tả.'}</p>
+                  <p>{doc.description || lt('Chưa có mô tả.', 'No description.')}</p>
                   <div className="project-docs__footer">
-                    <span>{doc.tags?.slice(0, 2).join(', ') || 'No tags'}</span>
-                    {doc.file_url ? (
-                      <a href={doc.file_url} target="_blank" rel="noreferrer">
-                        Mở tài liệu
-                      </a>
-                    ) : (
-                      <span>Không có link</span>
-                    )}
+                    <span>{doc.tags?.slice(0, 2).join(', ') || lt('Không có tag', 'No tags')}</span>
+                    <div className="project-docs__actions">
+                      {doc.file_url ? (
+                        <a href={doc.file_url} target="_blank" rel="noreferrer">
+                          {lt('Mở tài liệu', 'Open document')}
+                        </a>
+                      ) : (
+                        <span>{lt('Không có link', 'No link')}</span>
+                      )}
+                      <button
+                        type="button"
+                        className="project-docs__danger-btn"
+                        onClick={() => handleDeleteDocument(doc)}
+                        disabled={deletingDocumentId === doc.id}
+                        title={lt('Xóa', 'Delete')}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -450,27 +507,27 @@ const ProjectDetail = () => {
       <Modal
         isOpen={showEditModal}
         onClose={() => setShowEditModal(false)}
-        title="Chỉnh sửa dự án"
+        title={lt('Chỉnh sửa dự án', 'Edit project')}
         size="lg"
       >
         <div className="project-modal">
           <div className="project-modal__grid">
             <label>
-              <span>Tên dự án</span>
+              <span>{lt('Tên dự án', 'Project name')}</span>
               <input
                 value={editForm.name}
                 onChange={(e) => setEditForm(prev => ({ ...prev, name: e.target.value }))}
               />
             </label>
             <label>
-              <span>Mã dự án</span>
+              <span>{lt('Mã dự án', 'Project code')}</span>
               <input
                 value={editForm.code}
                 onChange={(e) => setEditForm(prev => ({ ...prev, code: e.target.value }))}
               />
             </label>
             <label className="project-modal__full">
-              <span>Mô tả</span>
+              <span>{lt('Mô tả', 'Description')}</span>
               <textarea
                 rows={3}
                 value={editForm.description}
@@ -478,7 +535,7 @@ const ProjectDetail = () => {
               />
             </label>
             <label className="project-modal__full">
-              <span>Mục tiêu</span>
+              <span>{lt('Mục tiêu', 'Objective')}</span>
               <textarea
                 rows={3}
                 value={editForm.objective}
@@ -488,10 +545,10 @@ const ProjectDetail = () => {
           </div>
           <div className="project-modal__actions">
             <button className="btn btn--secondary" onClick={() => setShowEditModal(false)}>
-              Hủy
+              {lt('Hủy', 'Cancel')}
             </button>
             <button className="btn btn--primary" onClick={handleSaveProject} disabled={!editForm.name.trim()}>
-              Lưu thay đổi
+              {lt('Lưu thay đổi', 'Save changes')}
             </button>
           </div>
         </div>
@@ -500,7 +557,7 @@ const ProjectDetail = () => {
       <Modal
         isOpen={!!renameMeetingModal}
         onClose={() => setRenameMeetingModal(null)}
-        title="Đổi tên phiên"
+        title={lt('Đổi tên phiên', 'Rename session')}
         size="sm"
       >
         <div className="rename-modal">
@@ -510,20 +567,20 @@ const ProjectDetail = () => {
             </div>
           )}
           <label className="rename-modal__label">
-            Tên mới
+            {lt('Tên mới', 'New name')}
             <input
               className="rename-modal__input"
               value={renameMeetingValue}
               onChange={(e) => setRenameMeetingValue(e.target.value)}
-              placeholder="Nhập tên mới..."
+              placeholder={lt('Nhập tên mới...', 'Enter new name...')}
             />
           </label>
           <div className="rename-modal__actions">
             <button className="btn btn--secondary" onClick={() => setRenameMeetingModal(null)} disabled={isRenamingMeeting}>
-              Hủy
+              {lt('Hủy', 'Cancel')}
             </button>
             <button className="btn btn--primary" onClick={handleRenameMeetingSubmit} disabled={isRenamingMeeting || !renameMeetingValue.trim()}>
-              {isRenamingMeeting ? 'Đang lưu...' : 'Lưu'}
+              {isRenamingMeeting ? lt('Đang lưu...', 'Saving...') : lt('Lưu', 'Save')}
             </button>
           </div>
         </div>
@@ -537,12 +594,13 @@ const ProjectDetail = () => {
           loadProject()
         }}
         projectId={project.id}
+        simpleMode
       />
 
       <Modal
         isOpen={showCreateMeetingModal}
         onClose={() => setShowCreateMeetingModal(false)}
-        title="Tạo phiên làm việc mới"
+        title={lt('Tạo phiên làm việc mới', 'Create new session')}
         size="lg"
       >
         <CreateMeetingForm
@@ -555,37 +613,40 @@ const ProjectDetail = () => {
   )
 }
 
-const ProjectMeetingMenu = ({ onRename, onRemove, onClose }: { onRename: () => void; onRemove: () => void; onClose: () => void }) => (
-  <div
-    className="drive-menu"
-    onClick={(e) => {
-      e.preventDefault()
-      e.stopPropagation()
-    }}
-  >
-    <div className="drive-menu__item drive-menu__item--submenu">
-      <span>Share</span>
-      <ChevronRight size={14} />
-      <div className="drive-menu__submenu">
-        <button type="button" className="drive-menu__action" onClick={onClose}>Copy link</button>
-        <button type="button" className="drive-menu__action" onClick={onClose}>Invite people</button>
+const ProjectMeetingMenu = ({ onRename, onRemove, onClose }: { onRename: () => void; onRemove: () => void; onClose: () => void }) => {
+  const { lt } = useLocaleText()
+  return (
+    <div
+      className="drive-menu"
+      onClick={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+      }}
+    >
+      <div className="drive-menu__item drive-menu__item--submenu">
+        <span>{lt('Chia sẻ', 'Share')}</span>
+        <ChevronRight size={14} />
+        <div className="drive-menu__submenu">
+          <button type="button" className="drive-menu__action" onClick={onClose}>{lt('Sao chép link', 'Copy link')}</button>
+          <button type="button" className="drive-menu__action" onClick={onClose}>{lt('Mời người tham gia', 'Invite people')}</button>
+        </div>
       </div>
-    </div>
-    <div className="drive-menu__item drive-menu__item--submenu">
-      <span>Organize</span>
-      <ChevronRight size={14} />
-      <div className="drive-menu__submenu">
-        <button type="button" className="drive-menu__action" onClick={onClose}>Move to…</button>
-        <button type="button" className="drive-menu__action" onClick={onClose}>Add shortcut</button>
+      <div className="drive-menu__item drive-menu__item--submenu">
+        <span>{lt('Tổ chức', 'Organize')}</span>
+        <ChevronRight size={14} />
+        <div className="drive-menu__submenu">
+          <button type="button" className="drive-menu__action" onClick={onClose}>{lt('Di chuyển tới…', 'Move to…')}</button>
+          <button type="button" className="drive-menu__action" onClick={onClose}>{lt('Thêm lối tắt', 'Add shortcut')}</button>
+        </div>
       </div>
+      <button type="button" className="drive-menu__item" onClick={onRename}>
+        {lt('Đổi tên', 'Rename')}
+      </button>
+      <button type="button" className="drive-menu__item drive-menu__item--danger" onClick={onRemove}>
+        {lt('Xóa', 'Remove')}
+      </button>
     </div>
-    <button type="button" className="drive-menu__item" onClick={onRename}>
-      Rename
-    </button>
-    <button type="button" className="drive-menu__item drive-menu__item--danger" onClick={onRemove}>
-      Remove
-    </button>
-  </div>
-)
+  )
+}
 
 export default ProjectDetail

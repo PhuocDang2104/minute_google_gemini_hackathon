@@ -19,6 +19,7 @@ import { knowledgeApi, type KnowledgeDocument, type RecentQuery } from '../../li
 import { meetingsApi } from '../../lib/api/meetings'
 import type { Meeting } from '../../shared/dto/meeting'
 import { API_URL } from '../../config/env'
+import { useLocaleText } from '../../i18n/useLocaleText'
 
 type UploadToastState = {
   status: 'pending' | 'success' | 'error'
@@ -26,6 +27,7 @@ type UploadToastState = {
 }
 
 const KnowledgeHub = () => {
+  const { lt, dateLocale } = useLocaleText()
   const [searchParams] = useSearchParams()
   const [query, setQuery] = useState('')
   const [isSearching, setIsSearching] = useState(false)
@@ -113,14 +115,14 @@ const KnowledgeHub = () => {
   const displayDocs = searchResults.length > 0 ? searchResults : suggestedDocs
 
   const handleDelete = async (docId: string) => {
-    const ok = window.confirm('Bạn có chắc muốn xóa tài liệu này?');
+    const ok = window.confirm(lt('Bạn có chắc muốn xóa tài liệu này?', 'Are you sure you want to delete this document?'));
     if (!ok) return;
     try {
       await knowledgeApi.delete(docId);
       await loadData();
     } catch (err) {
       console.error('Delete failed:', err);
-      alert('Xóa tài liệu thất bại. Vui lòng thử lại.');
+      alert(lt('Xóa tài liệu thất bại. Vui lòng thử lại.', 'Delete failed. Please try again.'));
     }
   };
 
@@ -130,14 +132,14 @@ const KnowledgeHub = () => {
       <div className="page-header">
         <div>
           <h1 className="page-header__title">Knowledge Hub</h1>
-          <p className="page-header__subtitle">Tìm kiếm tài liệu và hỏi đáp với AI</p>
+          <p className="page-header__subtitle">{lt('Tìm kiếm tài liệu và hỏi đáp với AI', 'Search documents and ask AI')}</p>
         </div>
         <button 
           className="btn btn--primary"
           onClick={() => setShowUploadModal(true)}
         >
           <Upload size={16} />
-          Upload tài liệu
+          {lt('Upload tài liệu', 'Upload document')}
         </button>
       </div>
 
@@ -158,7 +160,7 @@ const KnowledgeHub = () => {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder="Tìm kiếm tài liệu theo từ khóa..."
+              placeholder={lt('Tìm kiếm tài liệu theo từ khóa...', 'Search documents by keyword...')}
               style={{
                 flex: 1,
                 background: 'transparent',
@@ -174,7 +176,7 @@ const KnowledgeHub = () => {
               disabled={!query.trim() || isSearching}
             >
               {isSearching ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-              Tìm kiếm
+              {lt('Tìm kiếm', 'Search')}
             </button>
           </div>
         </div>
@@ -187,19 +189,21 @@ const KnowledgeHub = () => {
             <div className="card__header">
               <h3 className="card__title">
                 <BookOpen size={18} className="card__title-icon" />
-                {searchResults.length > 0 ? `Kết quả tìm kiếm (${searchResults.length})` : 'Tài liệu phổ biến'}
+                {searchResults.length > 0
+                  ? lt(`Kết quả tìm kiếm (${searchResults.length})`, `Search results (${searchResults.length})`)
+                  : lt('Tài liệu phổ biến', 'Popular documents')}
               </h3>
             </div>
             <div className="card__body">
               {isLoadingDocs ? (
                 <div className="section-loading">
                   <Loader2 size={20} className="animate-spin" />
-                  <span>Đang tải...</span>
+                  <span>{lt('Đang tải...', 'Loading...')}</span>
                 </div>
               ) : displayDocs.length === 0 ? (
                 <div className="empty-state-mini">
                   <FileText size={24} />
-                  <p>Không tìm thấy tài liệu</p>
+                  <p>{lt('Không tìm thấy tài liệu', 'No documents found')}</p>
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
@@ -268,7 +272,7 @@ const KnowledgeHub = () => {
                                 rel="noreferrer"
                                 onClick={(e) => e.stopPropagation()}
                               >
-                                Open
+                                {lt('Mở', 'Open')}
                               </a>
                               <a
                                 className="btn btn-xs"
@@ -276,7 +280,7 @@ const KnowledgeHub = () => {
                                 download
                                 onClick={(e) => e.stopPropagation()}
                               >
-                                Download
+                                {lt('Tải xuống', 'Download')}
                               </a>
                             </>
                           )}
@@ -287,7 +291,7 @@ const KnowledgeHub = () => {
                         <button
                           className="btn btn--ghost btn--icon btn--sm"
                           style={{ padding: '6px', width: '32px', height: '32px' }}
-                          title="Xóa"
+                          title={lt('Xóa', 'Delete')}
                           onClick={(e) => {
                             e.stopPropagation();
                             handleDelete(doc.id);
@@ -308,7 +312,7 @@ const KnowledgeHub = () => {
               <div className="card__header">
                 <h3 className="card__title">
                   <Search size={16} className="card__title-icon" />
-                  Cuộc họp phù hợp ({meetingResults.length})
+                  {lt(`Cuộc họp phù hợp (${meetingResults.length})`, `Relevant meetings (${meetingResults.length})`)}
                 </h3>
               </div>
               <div className="card__body">
@@ -321,7 +325,7 @@ const KnowledgeHub = () => {
                       <div className="tool-card__body">
                         <div className="tool-card__title">{m.title}</div>
                         <div className="tool-card__detail">
-                          {m.start_time ? new Date(m.start_time).toLocaleString('vi-VN') : 'Chưa có lịch'}
+                          {m.start_time ? new Date(m.start_time).toLocaleString(dateLocale) : lt('Chưa có lịch', 'No schedule yet')}
                         </div>
                       </div>
                       <Link to={`/app/meetings/${m.id}/detail`} className="btn btn--ghost btn--icon btn--sm">
@@ -339,7 +343,7 @@ const KnowledgeHub = () => {
             <div className="card__header">
               <h3 className="card__title">
                 <Clock size={18} className="card__title-icon" />
-                Tìm kiếm gần đây
+                {lt('Tìm kiếm gần đây', 'Recent searches')}
               </h3>
             </div>
             <div className="card__body">
@@ -370,7 +374,7 @@ const KnowledgeHub = () => {
                 )) : (
                   <div className="empty-state-mini">
                     <Clock size={24} />
-                    <p>Chưa có tìm kiếm nào</p>
+                    <p>{lt('Chưa có tìm kiếm nào', 'No searches yet')}</p>
                   </div>
                 )}
               </div>
@@ -430,6 +434,7 @@ interface UploadDocumentModalProps {
 }
 
 const UploadDocumentModal = ({ isOpen, onClose, onSuccess, onUploadProgress }: UploadDocumentModalProps) => {
+  const { lt } = useLocaleText()
   const [isUploading, setIsUploading] = useState(false)
   const [isDragOver, setIsDragOver] = useState(false)
   const [formData, setFormData] = useState({
@@ -451,7 +456,7 @@ const UploadDocumentModal = ({ isOpen, onClose, onSuccess, onUploadProgress }: U
     setIsUploading(true)
     onUploadProgress?.({
       status: 'pending',
-      message: 'Đang upload và vectorizing tài liệu...',
+      message: lt('Đang upload và vectorizing tài liệu...', 'Uploading and vectorizing document...'),
     })
     try {
       await knowledgeApi.upload({
@@ -473,14 +478,14 @@ const UploadDocumentModal = ({ isOpen, onClose, onSuccess, onUploadProgress }: U
       setTagInput('')
       onUploadProgress?.({
         status: 'success',
-        message: 'Upload & vector hóa hoàn tất!',
+        message: lt('Upload & vector hóa hoàn tất!', 'Upload & vectorization completed!'),
       })
       onSuccess()
     } catch (err) {
       console.error('Upload failed:', err)
       onUploadProgress?.({
         status: 'error',
-        message: 'Không thể upload/vectorize. Vui lòng thử lại.',
+        message: lt('Không thể upload/vectorize. Vui lòng thử lại.', 'Unable to upload/vectorize. Please try again.'),
       })
     } finally {
       setIsUploading(false)

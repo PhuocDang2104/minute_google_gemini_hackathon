@@ -1,42 +1,47 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useLocation, Link, useNavigate } from 'react-router-dom'
 import { ArrowLeft, HelpCircle, Home, ChevronRight, Search } from 'lucide-react'
-
-const routeTitles: Record<string, string> = {
-  '/': 'Home',
-  '/app': 'Home',
-  '/app/dashboard': 'Home',
-  '/app/calendar': 'Lịch họp',
-  '/app/meetings': 'Workspace',
-  '/app/projects': 'Dự án',
-  '/app/knowledge': 'Kho kiến thức',
-  '/app/tasks': 'Nhiệm vụ',
-  '/app/settings': 'Cài đặt',
-  '/app/admin': 'Bảng quản trị',
-}
-
-const findPageTitle = (path: string) => {
-  if (routeTitles[path]) return routeTitles[path]
-  if (path.startsWith('/app/meetings')) return 'Workspace'
-  if (path.startsWith('/app/projects')) return 'Dự án'
-  if (path.startsWith('/app/knowledge')) return 'Kho kiến thức'
-  if (path.startsWith('/app/tasks')) return 'Nhiệm vụ'
-  if (path.startsWith('/app/settings')) return 'Cài đặt'
-  return 'Minute'
-}
-
-const routeBreadcrumbs: Array<{ match: RegExp; trail: string[] }> = [
-  { match: /^\/app\/meetings\/[^/]+\/detail/, trail: ['Workspace', 'Chi tiết phiên'] },
-  { match: /^\/app\/projects\/[^/]+$/, trail: ['Dự án', 'Chi tiết dự án'] },
-]
+import { useLocaleText } from '../../i18n/useLocaleText'
 
 const Topbar = () => {
   const location = useLocation()
   const currentPath = location.pathname
   const navigate = useNavigate()
   const isDockView = /^\/app\/meetings\/[^/]+\/dock/.test(currentPath)
+  const { lt } = useLocaleText()
 
   const [searchTerm, setSearchTerm] = useState('')
+
+  const routeTitles: Record<string, string> = useMemo(() => ({
+    '/': 'Home',
+    '/app': 'Home',
+    '/app/dashboard': 'Home',
+    '/app/calendar': lt('Lịch họp', 'Calendar'),
+    '/app/meetings': 'Workspace',
+    '/app/projects': lt('Dự án', 'Projects'),
+    '/app/knowledge': lt('Kho kiến thức', 'Knowledge Hub'),
+    '/app/tasks': lt('Nhiệm vụ', 'Tasks'),
+    '/app/settings': lt('Cài đặt', 'Settings'),
+    '/app/admin': lt('Bảng quản trị', 'Admin Console'),
+  }), [lt])
+
+  const routeBreadcrumbs: Array<{ match: RegExp; trail: string[] }> = useMemo(
+    () => [
+      { match: /^\/app\/meetings\/[^/]+\/detail/, trail: ['Workspace', lt('Chi tiết phiên', 'Session detail')] },
+      { match: /^\/app\/projects\/[^/]+$/, trail: [lt('Dự án', 'Projects'), lt('Chi tiết dự án', 'Project detail')] },
+    ],
+    [lt],
+  )
+
+  const findPageTitle = (path: string) => {
+    if (routeTitles[path]) return routeTitles[path]
+    if (path.startsWith('/app/meetings')) return 'Workspace'
+    if (path.startsWith('/app/projects')) return lt('Dự án', 'Projects')
+    if (path.startsWith('/app/knowledge')) return lt('Kho kiến thức', 'Knowledge Hub')
+    if (path.startsWith('/app/tasks')) return lt('Nhiệm vụ', 'Tasks')
+    if (path.startsWith('/app/settings')) return lt('Cài đặt', 'Settings')
+    return 'Minute'
+  }
 
   return (
     <header className={`topbar ${isDockView ? 'topbar--dock' : ''}`}>
@@ -54,7 +59,7 @@ const Topbar = () => {
             <button
               className="topbar__icon-btn topbar__dock-back"
               onClick={() => navigate(-1)}
-              title="Quay lại"
+              title={lt('Quay lại', 'Back')}
             >
               <ArrowLeft size={18} />
             </button>
@@ -67,7 +72,7 @@ const Topbar = () => {
               const matched = routeBreadcrumbs.find(item => item.match.test(currentPath))
               const baseCrumb = findPageTitle(currentPath)
               const trail = matched ? matched.trail : []
-              const crumbs = (trail.length && trail[0] === baseCrumb) ? trail : [baseCrumb, ...trail]
+              const crumbs = trail.length && trail[0] === baseCrumb ? trail : [baseCrumb, ...trail]
               return (
                 <div className="topbar__breadcrumb">
                   <Home size={14} />
@@ -89,7 +94,7 @@ const Topbar = () => {
               <input
                 type="search"
                 className="topbar__search-input"
-                placeholder="Tìm kiếm cuộc họp, dự án, tài liệu..."
+                placeholder={lt('Tìm kiếm cuộc họp, dự án, tài liệu...', 'Search meetings, projects, documents...')}
                 value={searchTerm}
                 onChange={event => setSearchTerm(event.target.value)}
               />
@@ -97,7 +102,7 @@ const Topbar = () => {
           </div>
 
           <div className="topbar__right">
-            <Link to="/about" className="topbar__icon-btn" title="Giới thiệu Minute">
+            <Link to="/about" className="topbar__icon-btn" title={lt('Giới thiệu Minute', 'About Minute')}>
               <HelpCircle size={18} />
             </Link>
           </div>
@@ -108,3 +113,4 @@ const Topbar = () => {
 }
 
 export default Topbar
+

@@ -10,13 +10,13 @@ export const translations: Record<Language, TranslationKeys> = {
 };
 
 export const languageNames: Record<Language, string> = {
-  vi: 'Ti?ng Vi?t',
+  vi: 'Tiếng Việt',
   en: 'English',
 };
 
 export const languageFlags: Record<Language, string> = {
-  vi: '????',
-  en: '????',
+  vi: 'VI',
+  en: 'EN',
 };
 
 // Get nested translation value

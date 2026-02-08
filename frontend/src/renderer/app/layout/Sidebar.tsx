@@ -14,6 +14,7 @@ import { Modal } from '../../components/ui/Modal'
 import { CreateMeetingForm } from '../../features/meetings/components/CreateMeetingForm'
 import { projectsApi } from '../../lib/api/projects'
 import { USE_API } from '../../config/env'
+import { useLocaleText } from '../../i18n/useLocaleText'
 
 interface NavItem {
   path: string
@@ -26,6 +27,7 @@ const Sidebar = () => {
   const navigate = useNavigate()
   const storedUser = getStoredUser()
   const displayUser = storedUser || currentUser
+  const { lt } = useLocaleText()
 
   const [isCreateMenuOpen, setIsCreateMenuOpen] = useState(false)
   const [isMeetingModalOpen, setIsMeetingModalOpen] = useState(false)
@@ -80,19 +82,19 @@ const Sidebar = () => {
       navigate(`/app/projects/${created.id}`)
     } catch (err) {
       console.error('Create project failed:', err)
-      setProjectError('Không thể tạo dự án. Vui lòng thử lại.')
+      setProjectError(lt('Không thể tạo dự án. Vui lòng thử lại.', 'Unable to create project. Please try again.'))
     } finally {
       setIsCreatingProject(false)
     }
   }
 
   const navItems: NavItem[] = [
-    { path: '/app/meetings', label: 'Workspace', icon: <LayoutGrid size={20} /> },
+    { path: '/app/meetings', label: lt('Workspace', 'Workspace'), icon: <LayoutGrid size={20} /> },
   ]
 
   const bottomNavItems: NavItem[] = [
-    { path: '/app/settings', label: 'Cài đặt', icon: <Settings size={20} /> },
-    { path: '/about', label: 'Giới thiệu', icon: <Info size={20} /> },
+    { path: '/app/settings', label: lt('Cài đặt', 'Settings'), icon: <Settings size={20} /> },
+    { path: '/about', label: lt('Giới thiệu', 'About'), icon: <Info size={20} /> },
   ]
 
   return (
@@ -125,7 +127,7 @@ const Sidebar = () => {
                   <Plus size={20} />
                 </span>
                 <span className="sidebar__nav-label">
-                  Tạo mới
+                  {lt('Tạo mới', 'Create')}
                 </span>
               </button>
             </li>
@@ -184,7 +186,7 @@ const Sidebar = () => {
       <Modal
         isOpen={isCreateMenuOpen}
         onClose={() => setIsCreateMenuOpen(false)}
-        title="Tạo mới"
+        title={lt('Tạo mới', 'Create')}
         size="sm"
       >
         <div className="create-menu">
@@ -193,8 +195,8 @@ const Sidebar = () => {
               <FolderPlus size={18} />
             </div>
             <div className="create-menu__content">
-              <div className="create-menu__title">Dự án mới</div>
-              <div className="create-menu__desc">Tạo folder dự án mới</div>
+              <div className="create-menu__title">{lt('Dự án mới', 'New project')}</div>
+              <div className="create-menu__desc">{lt('Tạo folder dự án mới', 'Create a new project workspace')}</div>
             </div>
           </button>
           <button className="create-menu__item" onClick={openNewSession}>
@@ -202,8 +204,8 @@ const Sidebar = () => {
               <Calendar size={18} />
             </div>
             <div className="create-menu__content">
-              <div className="create-menu__title">Phiên mới</div>
-              <div className="create-menu__desc">Tạo phiên làm việc mới</div>
+              <div className="create-menu__title">{lt('Phiên mới', 'New session')}</div>
+              <div className="create-menu__desc">{lt('Tạo phiên làm việc mới', 'Create a new working session')}</div>
             </div>
           </button>
         </div>
@@ -213,7 +215,7 @@ const Sidebar = () => {
       <Modal
         isOpen={isMeetingModalOpen}
         onClose={() => setIsMeetingModalOpen(false)}
-        title="Tạo phiên làm việc mới"
+        title={lt('Tạo phiên làm việc mới', 'Create new working session')}
         size="lg"
       >
         <CreateMeetingForm
@@ -226,7 +228,7 @@ const Sidebar = () => {
       <Modal
         isOpen={isProjectModalOpen}
         onClose={() => setIsProjectModalOpen(false)}
-        title="Tạo dự án mới"
+        title={lt('Tạo dự án mới', 'Create new project')}
         size="lg"
       >
         <div className="project-modal">
@@ -237,15 +239,15 @@ const Sidebar = () => {
           )}
           <div className="project-modal__grid">
             <label>
-              <span>Tên dự án *</span>
+              <span>{lt('Tên dự án *', 'Project name *')}</span>
               <input
                 value={createProjectForm.name}
                 onChange={(e) => setCreateProjectForm(prev => ({ ...prev, name: e.target.value }))}
-                placeholder="VD: Core Banking Modernization"
+                placeholder={lt('VD: Core Banking Modernization', 'e.g. Core Banking Modernization')}
               />
             </label>
             <label>
-              <span>Mã dự án</span>
+              <span>{lt('Mã dự án', 'Project code')}</span>
               <input
                 value={createProjectForm.code}
                 onChange={(e) => setCreateProjectForm(prev => ({ ...prev, code: e.target.value }))}
@@ -253,30 +255,30 @@ const Sidebar = () => {
               />
             </label>
             <label className="project-modal__full">
-              <span>Mô tả</span>
+              <span>{lt('Mô tả', 'Description')}</span>
               <textarea
                 rows={3}
                 value={createProjectForm.description}
                 onChange={(e) => setCreateProjectForm(prev => ({ ...prev, description: e.target.value }))}
-                placeholder="Tóm tắt dự án, phạm vi, stakeholder..."
+                placeholder={lt('Tóm tắt dự án, phạm vi, stakeholder...', 'Project summary, scope, stakeholders...')}
               />
             </label>
             <label className="project-modal__full">
-              <span>Mục tiêu</span>
+              <span>{lt('Mục tiêu', 'Objective')}</span>
               <textarea
                 rows={3}
                 value={createProjectForm.objective}
                 onChange={(e) => setCreateProjectForm(prev => ({ ...prev, objective: e.target.value }))}
-                placeholder="Mô tả các OKR, goal chính..."
+                placeholder={lt('Mô tả các OKR, goal chính...', 'Describe key OKRs and goals...')}
               />
             </label>
           </div>
           <div className="project-modal__actions">
             <button className="btn btn--secondary" onClick={() => setIsProjectModalOpen(false)} disabled={isCreatingProject}>
-              Hủy
+              {lt('Hủy', 'Cancel')}
             </button>
             <button className="btn btn--primary" onClick={handleCreateProject} disabled={!createProjectForm.name.trim() || isCreatingProject}>
-              {isCreatingProject ? 'Đang tạo...' : 'Tạo dự án'}
+              {isCreatingProject ? lt('Đang tạo...', 'Creating...') : lt('Tạo dự án', 'Create project')}
             </button>
           </div>
         </div>

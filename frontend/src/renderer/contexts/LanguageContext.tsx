@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { translations, getTranslation, type Language, type TranslationKeys } from '../i18n';
+import { applyLegacyAutoTranslation } from '../i18n/legacyLiterals';
 
 interface LanguageContextType {
   language: Language;
@@ -38,6 +39,34 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     document.documentElement.lang = language;
   }, [language]);
 
+  // Compatibility layer: auto-translate remaining hard-coded literals in legacy pages.
+  useEffect(() => {
+    if (typeof document === 'undefined' || !document.body) return;
+
+    let applying = false;
+    const run = () => {
+      if (applying) return;
+      applying = true;
+      try {
+        applyLegacyAutoTranslation(document.body, language);
+      } finally {
+        applying = false;
+      }
+    };
+
+    run();
+    const observer = new MutationObserver(() => run());
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ['placeholder', 'title', 'aria-label'],
+    });
+
+    return () => observer.disconnect();
+  }, [language]);
+
   const t = useCallback(
     (key: string): string => {
       return getTranslation(translations[language], key);
@@ -72,4 +101,3 @@ export function useTranslation() {
   const { t, language } = useLanguage();
   return { t, language };
 }
-

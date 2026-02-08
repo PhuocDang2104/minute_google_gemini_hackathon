@@ -513,7 +513,7 @@ const Settings = () => {
           </div>
           <div className="card__body">
             <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 'var(--space-md)' }}>
-              Thiết lập phong cách phản hồi của MINUTE. Các thông tin này được dùng để điều chỉnh prompt AI.
+              Thiết lập phong cách phản hồi của MINUTE. Các thông tin này được đưa vào prompt để AI trả lời đúng ngữ cảnh sản phẩm.
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
               <div>
@@ -522,7 +522,7 @@ const Settings = () => {
                 </label>
                 <input
                   type="text"
-                  placeholder="Phước, Anh Phước"
+                  placeholder="Ví dụ: Phước (PM), Lan (Tech Lead)"
                   value={settings.personalization.nickname}
                   onChange={e => updatePersonal('nickname', e.target.value)}
                   style={inputStyle}
@@ -533,7 +533,7 @@ const Settings = () => {
                   Hãy kể thêm về bạn
                 </label>
                 <textarea
-                  placeholder="Mình làm PM, thích bullet rõ ràng, ưu tiên evidence..."
+                  placeholder="Ví dụ: Mình làm PM fintech, thích output dạng bullet, ưu tiên số liệu và bằng chứng."
                   value={settings.personalization.about}
                   onChange={e => updatePersonal('about', e.target.value)}
                   style={textAreaStyle}
@@ -544,7 +544,7 @@ const Settings = () => {
                   Mô tả định hướng tương lai
                 </label>
                 <textarea
-                  placeholder="6 tháng tới muốn improve kỹ năng leadership, quản trị dự án..."
+                  placeholder="Ví dụ: 3-6 tháng tới cần cải thiện leadership, delivery tốc độ cao, giảm rủi ro vận hành."
                   value={settings.personalization.futureFocus}
                   onChange={e => updatePersonal('futureFocus', e.target.value)}
                   style={textAreaStyle}
@@ -556,7 +556,7 @@ const Settings = () => {
                 </label>
                 <input
                   type="text"
-                  placeholder="Team lead backend, Sinh viên CNTT, PM sản phẩm"
+                  placeholder="Ví dụ: Product Manager, PMO, Engineering Manager"
                   value={settings.personalization.role}
                   onChange={e => updatePersonal('role', e.target.value)}
                   style={inputStyle}
@@ -841,13 +841,13 @@ const Settings = () => {
                   Master prompt cho AI
                 </label>
                 <textarea
-                  placeholder="Ví dụ: Ưu tiên bullet rõ ràng, nêu action theo owner/deadline, luôn chỉ ra timestamp khi có."
+                  placeholder="Ví dụ: Luôn trả lời theo format Executive Summary -> Decision Table -> Action Table (owner/deadline/priority). Bắt buộc trích dẫn transcript/tài liệu/timecode; nếu thiếu dữ liệu phải nêu rõ và đề xuất câu hỏi tiếp theo."
                   value={llmSettings.masterPrompt}
                   onChange={e => updateLlm('masterPrompt', e.target.value)}
                   style={{ ...textAreaStyle, minHeight: '120px' }}
                 />
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
-                  Prompt này được ghép vào system prompt cho chatbot/tóm tắt và lưu trên server.
+                  Prompt này được ghép vào system prompt cho chatbot/tóm tắt và lưu trên server. Nên mô tả rõ format đầu ra để demo hackathon nhất quán.
                 </div>
               </div>
 

@@ -27,10 +27,10 @@ interface KnowledgeHubChatProps {
 
 // Default suggestions
 const DEFAULT_SUGGESTIONS = [
-  'Data retention policy',
-  'KYC requirements', 
-  'Security standards',
-  'Quy trình Change Request',
+  'Tóm tắt policy data retention và trích nguồn.',
+  'Các yêu cầu KYC bắt buộc theo tài liệu đã upload?',
+  'Checklist security trước khi release sản phẩm là gì?',
+  'Quy trình Change Request chuẩn gồm những bước nào?',
 ]
 
 // Generate unique ID
@@ -177,7 +177,7 @@ export const KnowledgeHubChat = ({
           </div>
           <div className="knowledge-chat__header-text">
             <h3 className="knowledge-chat__title">Hỏi AI</h3>
-            <p className="knowledge-chat__subtitle">Hỏi về policies, tài liệu...</p>
+            <p className="knowledge-chat__subtitle">Hỏi theo tài liệu/policy và yêu cầu trích dẫn</p>
           </div>
         </div>
         <div className="knowledge-chat__header-actions">
@@ -211,7 +211,7 @@ export const KnowledgeHubChat = ({
             </div>
             <h4 className="knowledge-chat__empty-title">Xin chào!</h4>
             <p className="knowledge-chat__empty-text">
-              Tôi có thể giúp bạn tìm kiếm thông tin về policies, quy định và tài liệu.
+              Tôi có thể giúp bạn truy xuất thông tin từ tài liệu đã upload, kèm trích dẫn khi có.
             </p>
             
             {/* Quick Suggestions */}
@@ -304,7 +304,7 @@ export const KnowledgeHubChat = ({
             value={inputValue}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
-            placeholder="Nhập câu hỏi..."
+            placeholder="Đặt câu hỏi về tài liệu, policy, compliance..."
             rows={1}
             disabled={isStreaming}
           />
@@ -322,4 +322,3 @@ export const KnowledgeHubChat = ({
 }
 
 export default KnowledgeHubChat
-

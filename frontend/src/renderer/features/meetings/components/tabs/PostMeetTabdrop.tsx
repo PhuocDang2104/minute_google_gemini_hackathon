@@ -217,7 +217,7 @@ const SummarySection = ({ meeting }: { meeting: MeetingWithParticipants }) => {
         <title>Biên bản cuộc họp - ${meeting.title}</title>
         <style>
           * { box-sizing: border-box; margin: 0; padding: 0; }
-          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; padding: 40px; max-width: 800px; margin: 0 auto; }
+          body { font-family: 'Be Vietnam Pro', 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #333; padding: 40px; max-width: 800px; margin: 0 auto; }
           .header { text-align: center; border-bottom: 2px solid #0b63d1; padding-bottom: 20px; margin-bottom: 30px; }
           .header h1 { color: #0b63d1; font-size: 22px; margin-bottom: 8px; }
           .meta { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 24px; padding: 12px; background: #f5f6fa; border-radius: 8px; }
@@ -1358,7 +1358,7 @@ Minute AI Assistant`;
                       value={emailBody}
                       onChange={e => setEmailBody(e.target.value)}
                       rows={10}
-                      style={{ fontFamily: 'monospace', fontSize: '12px', lineHeight: 1.5 }}
+                      style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', lineHeight: 1.5 }}
                     />
                   </div>
 

@@ -57,7 +57,7 @@ export const RecordingControls = () => {
             ) : (
                 <>
                     <div className="recording-timer" style={{
-                        fontFamily: 'monospace',
+                        fontFamily: 'var(--font-mono)',
                         fontSize: '16px',
                         fontWeight: 600,
                         color: 'var(--error)'

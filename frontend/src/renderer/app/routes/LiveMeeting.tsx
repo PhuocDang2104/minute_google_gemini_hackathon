@@ -1,9 +1,11 @@
 import { Link } from 'react-router-dom'
 import { Radio, Users, Clock, ArrowRight, Loader2 } from 'lucide-react'
 import { useLiveMeeting } from '../../services/meeting'
+import { useLocaleText } from '../../i18n/useLocaleText'
 
 const LiveMeeting = () => {
   const { data: liveMeeting, isLoading } = useLiveMeeting()
+  const { lt } = useLocaleText()
 
   // Loading state
   if (isLoading) {
@@ -12,7 +14,7 @@ const LiveMeeting = () => {
         <div className="page-header">
           <div>
             <h1 className="page-header__title">Live Meeting</h1>
-            <p className="page-header__subtitle">Đang kiểm tra...</p>
+            <p className="page-header__subtitle">{lt('Đang kiểm tra...', 'Checking...')}</p>
           </div>
         </div>
 
@@ -32,7 +34,7 @@ const LiveMeeting = () => {
         <div className="page-header">
           <div>
             <h1 className="page-header__title">Live Meeting</h1>
-            <p className="page-header__subtitle">Không có cuộc họp nào đang diễn ra</p>
+            <p className="page-header__subtitle">{lt('Không có cuộc họp nào đang diễn ra', 'No live meeting at the moment')}</p>
           </div>
         </div>
 
@@ -40,12 +42,15 @@ const LiveMeeting = () => {
           <div className="card__body">
             <div className="empty-state">
               <Radio size={48} className="empty-state__icon" />
-              <div className="empty-state__title">Không có cuộc họp live</div>
+              <div className="empty-state__title">{lt('Không có cuộc họp live', 'No live meeting')}</div>
               <div className="empty-state__description">
-                Hiện tại không có cuộc họp nào đang diễn ra. Khi thời gian hiện tại nằm trong khoảng thời gian họp, cuộc họp sẽ xuất hiện ở đây.
+                {lt(
+                  'Hiện tại không có cuộc họp nào đang diễn ra. Khi thời gian hiện tại nằm trong khoảng thời gian họp, cuộc họp sẽ xuất hiện ở đây.',
+                  'There is no meeting in progress. A meeting will appear here when current time falls within its schedule.',
+                )}
               </div>
               <Link to="/app/meetings" className="btn btn--primary" style={{ marginTop: 'var(--space-lg)' }}>
-                Xem danh sách cuộc họp
+                {lt('Xem danh sách cuộc họp', 'View meetings')}
               </Link>
             </div>
           </div>
@@ -60,7 +65,7 @@ const LiveMeeting = () => {
       <div className="page-header">
         <div>
           <h1 className="page-header__title">Live Meeting</h1>
-          <p className="page-header__subtitle">Cuộc họp đang diễn ra</p>
+          <p className="page-header__subtitle">{lt('Cuộc họp đang diễn ra', 'Meeting in progress')}</p>
         </div>
       </div>
 
@@ -75,7 +80,7 @@ const LiveMeeting = () => {
                     LIVE
                   </span>
                   <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-                    Bắt đầu lúc {liveMeeting.start}
+                    {lt('Bắt đầu lúc', 'Started at')} {liveMeeting.start}
                   </span>
                 </div>
                 <h2 style={{ fontSize: '20px', fontWeight: 600, marginBottom: 'var(--space-sm)' }}>
@@ -84,11 +89,11 @@ const LiveMeeting = () => {
                 <div style={{ display: 'flex', gap: 'var(--space-lg)', fontSize: '13px', color: 'var(--text-secondary)' }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)' }}>
                     <Users size={14} />
-                    {liveMeeting.participants} người tham gia
+                    {liveMeeting.participants} {lt('người tham gia', 'participants')}
                   </span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)' }}>
                     <Clock size={14} />
-                    Đang diễn ra
+                    {lt('Đang diễn ra', 'Live')}
                   </span>
                 </div>
               </div>
@@ -102,7 +107,7 @@ const LiveMeeting = () => {
                 style={{ fontSize: '15px', padding: 'var(--space-md) var(--space-xl)' }}
                 onClick={(e) => e.stopPropagation()}
               >
-                Tham gia ngay
+                {lt('Tham gia ngay', 'Join now')}
                 <ArrowRight size={18} />
               </a>
             )}

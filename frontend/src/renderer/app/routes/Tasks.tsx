@@ -17,6 +17,7 @@ import {
 import { itemsApi, ActionItem, ActionItemFilters } from '../../lib/api/items'
 import { actionItems as mockActionItems } from '../../store/mockData'
 import { USE_API } from '../../config/env'
+import { useLocaleText } from '../../i18n/useLocaleText'
 
 // Helper to check if date is overdue
 const isOverdue = (deadline?: string) => {
@@ -41,6 +42,7 @@ const transformMockToApi = (mock: typeof mockActionItems[0]): ActionItem => ({
 })
 
 const Tasks = () => {
+  const { lt } = useLocaleText()
   const [items, setItems] = useState<ActionItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -78,7 +80,7 @@ const Tasks = () => {
       console.error('Failed to fetch action items:', err)
       // Fallback to mock data
       setItems(mockActionItems.map(transformMockToApi))
-      setError('Không thể tải dữ liệu. Đang hiển thị dữ liệu mẫu.')
+      setError(lt('Không thể tải dữ liệu. Đang hiển thị dữ liệu mẫu.', 'Unable to load data. Showing mock data.'))
     } finally {
       setIsLoading(false)
     }
@@ -142,14 +144,14 @@ const Tasks = () => {
       <div className="page-header">
         <div>
           <h1 className="page-header__title">Action Items</h1>
-          <p className="page-header__subtitle">Theo dõi tất cả action items từ các cuộc họp</p>
+          <p className="page-header__subtitle">{lt('Theo dõi tất cả action items từ các cuộc họp', 'Track all action items from meetings')}</p>
         </div>
         <div className="page-header__actions">
           <button 
             className="btn btn--ghost" 
             onClick={() => fetchItems(filters)}
             disabled={isLoading}
-            title="Làm mới"
+            title={lt('Làm mới', 'Refresh')}
           >
             <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
           </button>
@@ -158,7 +160,7 @@ const Tasks = () => {
             onClick={() => setShowFilterModal(true)}
           >
             <Filter size={16} />
-            Lọc
+            {lt('Lọc', 'Filter')}
             {Object.keys(filters).length > 0 && (
               <span className="badge badge--accent" style={{ marginLeft: 4 }}>
                 {Object.keys(filters).length}
@@ -170,7 +172,7 @@ const Tasks = () => {
             onClick={() => setShowAddModal(true)}
           >
             <Plus size={16} />
-            Thêm mới
+            {lt('Thêm mới', 'Add new')}
           </button>
         </div>
       </div>
@@ -188,11 +190,11 @@ const Tasks = () => {
       {/* Quick Filters */}
       <div className="mb-4" style={{ display: 'flex', gap: 'var(--space-sm)', flexWrap: 'wrap' }}>
         {[
-          { key: 'all', label: 'Tất cả', count: items.length },
-          { key: 'overdue', label: 'Quá hạn', count: overdue.length, variant: 'error' },
-          { key: 'in_progress', label: 'Đang thực hiện', count: inProgress.length, variant: 'warning' },
-          { key: 'completed', label: 'Hoàn thành', count: completed.length, variant: 'success' },
-          { key: 'high', label: 'Ưu tiên cao', count: items.filter(i => i.priority === 'high' || i.priority === 'critical').length, variant: 'accent' },
+          { key: 'all', label: lt('Tất cả', 'All'), count: items.length },
+          { key: 'overdue', label: lt('Quá hạn', 'Overdue'), count: overdue.length, variant: 'error' },
+          { key: 'in_progress', label: lt('Đang thực hiện', 'In progress'), count: inProgress.length, variant: 'warning' },
+          { key: 'completed', label: lt('Hoàn thành', 'Completed'), count: completed.length, variant: 'success' },
+          { key: 'high', label: lt('Ưu tiên cao', 'High priority'), count: items.filter(i => i.priority === 'high' || i.priority === 'critical').length, variant: 'accent' },
         ].map(filter => (
           <button
             key={filter.key}
@@ -213,8 +215,8 @@ const Tasks = () => {
           <div className="stats-card__icon stats-card__icon--info">
             <CheckSquare size={22} />
           </div>
-          <div className="stats-card__content">
-            <div className="stats-card__label">Tổng số</div>
+            <div className="stats-card__content">
+            <div className="stats-card__label">{lt('Tổng số', 'Total')}</div>
             <div className="stats-card__value">{items.length}</div>
           </div>
         </div>
@@ -222,8 +224,8 @@ const Tasks = () => {
           <div className="stats-card__icon stats-card__icon--error">
             <AlertTriangle size={22} />
           </div>
-          <div className="stats-card__content">
-            <div className="stats-card__label">Quá hạn</div>
+            <div className="stats-card__content">
+            <div className="stats-card__label">{lt('Quá hạn', 'Overdue')}</div>
             <div className="stats-card__value">{overdue.length}</div>
           </div>
         </div>
@@ -231,8 +233,8 @@ const Tasks = () => {
           <div className="stats-card__icon stats-card__icon--warning">
             <Clock size={22} />
           </div>
-          <div className="stats-card__content">
-            <div className="stats-card__label">Đang thực hiện</div>
+            <div className="stats-card__content">
+            <div className="stats-card__label">{lt('Đang thực hiện', 'In progress')}</div>
             <div className="stats-card__value">{inProgress.length}</div>
           </div>
         </div>
@@ -240,8 +242,8 @@ const Tasks = () => {
           <div className="stats-card__icon stats-card__icon--success">
             <Check size={22} />
           </div>
-          <div className="stats-card__content">
-            <div className="stats-card__label">Hoàn thành</div>
+            <div className="stats-card__content">
+            <div className="stats-card__label">{lt('Hoàn thành', 'Completed')}</div>
             <div className="stats-card__value">{completed.length}</div>
           </div>
         </div>
@@ -252,7 +254,7 @@ const Tasks = () => {
         <div className="card">
           <div className="card__body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'var(--space-xl)' }}>
             <Loader2 size={24} className="animate-spin" style={{ marginRight: 'var(--space-md)' }} />
-            <span>Đang tải...</span>
+            <span>{lt('Đang tải...', 'Loading...')}</span>
           </div>
         </div>
       )}
@@ -601,4 +603,3 @@ const AddActionModal = ({ onAdd, onClose }: AddActionModalProps) => {
 }
 
 export default Tasks
-

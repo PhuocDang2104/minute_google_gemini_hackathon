@@ -714,7 +714,7 @@ const CenterPanel = ({
   <title>Biên bản - ${meeting.title}</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Segoe UI', 'Roboto', Arial, sans-serif; line-height: 1.6; color: #1f2937; background: #fff; }
+    body { font-family: 'Be Vietnam Pro', 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #1f2937; background: #fff; }
     .container { max-width: 800px; margin: 0 auto; padding: 40px; }
     
     /* Header */

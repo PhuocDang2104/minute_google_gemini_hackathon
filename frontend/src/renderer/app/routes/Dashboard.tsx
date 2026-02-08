@@ -17,11 +17,13 @@ import {
 import { actionItems, isOverdue } from '../../store/mockData'
 import { useUpcomingMeetings, type NormalizedMeeting } from '../../services/meeting'
 import aiApi from '../../lib/api/ai'
-
-const formatShortDate = (date: Date) =>
-  date.toLocaleDateString('vi-VN', { day: '2-digit', month: 'short' })
+import { useLocaleText } from '../../i18n/useLocaleText'
 
 const Dashboard = () => {
+  const { lt, dateLocale } = useLocaleText()
+  const formatShortDate = (date: Date) =>
+    date.toLocaleDateString(dateLocale, { day: '2-digit', month: 'short' })
+
   const { data: upcomingMeetings, isLoading: loadingMeetings } = useUpcomingMeetings(3)
   const [askValue, setAskValue] = useState('')
   const [askResponse, setAskResponse] = useState<string | null>(null)
@@ -34,51 +36,54 @@ const Dashboard = () => {
 
   const suggestions = [
     {
-      title: 'Tóm tắt cuộc họp gần nhất',
-      description: 'Tổng hợp quyết định, action items và người phụ trách trong 60 giây.',
+      title: lt('Tóm tắt cuộc họp gần nhất', 'Summarize the latest meeting'),
+      description: lt(
+        'Tổng hợp quyết định, action items và người phụ trách trong 60 giây.',
+        'Summarize decisions, action items, and owners in 60 seconds.',
+      ),
     },
     {
-      title: 'Chuẩn bị agenda tuần này',
-      description: 'Gợi ý agenda dựa trên lịch họp và tài liệu liên quan.',
+      title: lt('Chuẩn bị agenda tuần này', 'Prepare this week agenda'),
+      description: lt('Gợi ý agenda dựa trên lịch họp và tài liệu liên quan.', 'Suggest agenda based on meetings and related documents.'),
     },
     {
-      title: 'Rà soát action items quá hạn',
-      description: 'Ưu tiên những việc có rủi ro trễ deadline.',
+      title: lt('Rà soát action items quá hạn', 'Review overdue action items'),
+      description: lt('Ưu tiên những việc có rủi ro trễ deadline.', 'Prioritize tasks at risk of missing deadlines.'),
     },
   ]
 
   const kpis = [
     {
-      value: '25 giờ/ngày',
-      label: 'Thời gian tiết kiệm',
-      note: '100 cuộc họp × 15 phút',
+      value: lt('25 giờ/ngày', '25 hours/day'),
+      label: lt('Thời gian tiết kiệm', 'Time saved'),
+      note: lt('100 cuộc họp × 15 phút', '100 meetings × 15 minutes'),
       variant: 'impact',
       trend: 'up',
-      delta: '+18% tuần này',
+      delta: lt('+18% tuần này', '+18% this week'),
     },
     {
-      value: '<10 phút',
-      label: 'Phát hành minutes',
-      note: 'Chuẩn hóa sau họp',
+      value: lt('<10 phút', '<10 mins'),
+      label: lt('Phát hành minutes', 'Minutes release'),
+      note: lt('Chuẩn hóa sau họp', 'Standardized after meeting'),
       variant: 'speed',
       trend: 'down',
-      delta: 'Giảm 35% thời gian',
+      delta: lt('Giảm 35% thời gian', '35% faster'),
     },
     {
       value: '2-3s',
-      label: 'Độ trễ recap live',
-      note: 'Realtime mượt mà',
+      label: lt('Độ trễ recap live', 'Live recap latency'),
+      note: lt('Realtime mượt mà', 'Smooth realtime'),
       variant: 'latency',
       trend: 'down',
-      delta: 'Giảm 12% độ trễ',
+      delta: lt('Giảm 12% độ trễ', '12% lower latency'),
     },
     {
       value: '92%',
-      label: 'Action đúng hạn',
-      note: 'Owner + deadline rõ',
+      label: lt('Action đúng hạn', 'On-time actions'),
+      note: lt('Owner + deadline rõ', 'Clear owner + deadline'),
       variant: 'quality',
       trend: 'up',
-      delta: '+9% tỉ lệ đúng hạn',
+      delta: lt('+9% tỉ lệ đúng hạn', '+9% on-time rate'),
     },
   ]
 
@@ -95,7 +100,7 @@ const Dashboard = () => {
       setAskResponse(response.message)
       setAskValue('')
     } catch {
-      setAskError('Không thể kết nối Groq lúc này. Vui lòng thử lại sau.')
+      setAskError(lt('Không thể kết nối Groq lúc này. Vui lòng thử lại sau.', 'Unable to connect to Groq right now. Please try again later.'))
     } finally {
       setAskLoading(false)
     }
@@ -106,7 +111,7 @@ const Dashboard = () => {
       <div className="home-header">
         <div>
           <h1 className="home-title">Home</h1>
-          <p className="home-subtitle">Tập trung vào những điểm quan trọng hôm nay.</p>
+          <p className="home-subtitle">{lt('Tập trung vào những điểm quan trọng hôm nay.', 'Focus on what matters today.')}</p>
         </div>
       </div>
 
@@ -115,7 +120,7 @@ const Dashboard = () => {
           <Sparkles size={18} className="home-ask__icon" />
           <input
             className="home-ask__input"
-            placeholder="Hôm nay bạn thế nào? Chia sẻ hay muốn hỏi gì không?"
+            placeholder={lt('Hôm nay bạn thế nào? Chia sẻ hay muốn hỏi gì không?', 'How are you today? What would you like to ask?')}
             value={askValue}
             onChange={event => setAskValue(event.target.value)}
             onKeyDown={event => {
@@ -124,7 +129,7 @@ const Dashboard = () => {
                 handleAskSubmit()
               }
             }}
-            aria-label="Hỏi nhanh Minute"
+            aria-label={lt('Hỏi nhanh Minute', 'Quick ask Minute')}
             disabled={askLoading}
           />
           <button
@@ -133,7 +138,7 @@ const Dashboard = () => {
             onClick={handleAskSubmit}
             disabled={askLoading || !askValue.trim()}
           >
-            {askLoading ? 'Đang gửi...' : 'Gửi'}
+            {askLoading ? lt('Đang gửi...', 'Sending...') : lt('Gửi', 'Send')}
           </button>
         </div>
         {(askResponse || askError) && (
@@ -167,10 +172,10 @@ const Dashboard = () => {
           <div className="home-panel__header">
             <div className="home-panel__title">
               <Calendar size={18} />
-              Upcoming meetings
+              {lt('Cuộc họp sắp tới', 'Upcoming meetings')}
             </div>
             <Link to="/app/meetings" className="home-panel__link">
-              Xem tất cả
+              {lt('Xem tất cả', 'View all')}
               <ArrowRight size={14} />
             </Link>
           </div>
@@ -192,18 +197,18 @@ const Dashboard = () => {
                     <div className="home-meeting-content">
                       <div className="home-meeting-title">{meeting.title}</div>
                       <div className="home-meeting-meta">
-                        <span>{meeting.location || 'Online'}</span>
-                        <span>{meeting.participants} người</span>
+                        <span>{meeting.location || lt('Online', 'Online')}</span>
+                        <span>{meeting.participants} {lt('người', 'people')}</span>
                       </div>
                     </div>
                     <Link to={`/app/meetings/${meeting.id}/detail`} className="home-meeting-link">
-                      Xem
+                      {lt('Xem', 'View')}
                     </Link>
                   </li>
                 ))}
               </ul>
             ) : (
-              <div className="home-empty">Không có cuộc họp sắp tới.</div>
+              <div className="home-empty">{lt('Không có cuộc họp sắp tới.', 'No upcoming meetings.')}</div>
             )}
           </div>
         </section>
@@ -212,16 +217,16 @@ const Dashboard = () => {
           <div className="home-panel__header">
             <div className="home-panel__title">
               <CheckSquare size={18} />
-              My tasks
+              {lt('Nhiệm vụ của tôi', 'My tasks')}
             </div>
             <Link to="/app/tasks" className="home-panel__link">
-              Xem tất cả
+              {lt('Xem tất cả', 'View all')}
               <ArrowRight size={14} />
             </Link>
           </div>
           <div className="home-panel__body">
             {myTasks.length === 0 ? (
-              <div className="home-empty">Bạn chưa có nhiệm vụ nào.</div>
+              <div className="home-empty">{lt('Bạn chưa có nhiệm vụ nào.', 'You have no tasks yet.')}</div>
             ) : (
               <ul className="home-task-list">
                 {myTasks.map(task => {
@@ -236,12 +241,12 @@ const Dashboard = () => {
                             <User size={12} /> {task.owner.displayName.split(' ').slice(-1)[0]}
                           </span>
                           <span className={overdue ? 'home-task-meta--overdue' : ''}>
-                            <Clock size={12} /> {overdue ? 'Quá hạn' : formatShortDate(task.deadline)}
+                            <Clock size={12} /> {overdue ? lt('Quá hạn', 'Overdue') : formatShortDate(task.deadline)}
                           </span>
                         </div>
                       </div>
                       <span className={`home-pill ${overdue ? 'home-pill--danger' : ''}`}>
-                        {overdue ? 'Quá hạn' : 'Đang xử lý'}
+                        {overdue ? lt('Quá hạn', 'Overdue') : lt('Đang xử lý', 'In progress')}
                       </span>
                     </li>
                   )
@@ -256,7 +261,7 @@ const Dashboard = () => {
         <div className="home-panel__header">
           <div className="home-panel__title">
             <Lightbulb size={18} />
-            AI Suggested for you
+            {lt('AI gợi ý cho bạn', 'AI suggested for you')}
           </div>
         </div>
         <div className="home-panel__body">

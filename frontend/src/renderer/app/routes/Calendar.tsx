@@ -27,14 +27,24 @@ import {
   type NormalizedMeeting,
 } from '../../services/meeting'
 import MeetingsViewToggle from '../../components/MeetingsViewToggle'
+import { useLocaleText } from '../../i18n/useLocaleText'
 
 type ViewMode = 'year' | 'month' | 'week'
 
-// Days of week in Vietnamese
-const WEEKDAYS = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7']
-const WEEKDAYS_FULL = ['Chủ nhật', 'Thứ hai', 'Thứ ba', 'Thứ tư', 'Thứ năm', 'Thứ sáu', 'Thứ bảy']
-const MONTHS = ['Tháng 1', 'Tháng 2', 'Tháng 3', 'Tháng 4', 'Tháng 5', 'Tháng 6', 
-                'Tháng 7', 'Tháng 8', 'Tháng 9', 'Tháng 10', 'Tháng 11', 'Tháng 12']
+const WEEKDAYS = {
+  vi: ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'],
+  en: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+}
+
+const WEEKDAYS_FULL = {
+  vi: ['Chủ nhật', 'Thứ hai', 'Thứ ba', 'Thứ tư', 'Thứ năm', 'Thứ sáu', 'Thứ bảy'],
+  en: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+}
+
+const MONTHS = {
+  vi: ['Tháng 1', 'Tháng 2', 'Tháng 3', 'Tháng 4', 'Tháng 5', 'Tháng 6', 'Tháng 7', 'Tháng 8', 'Tháng 9', 'Tháng 10', 'Tháng 11', 'Tháng 12'],
+  en: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
+}
 
 // Helper functions
 const isSameDay = (d1: Date, d2: Date) => 
@@ -61,6 +71,11 @@ const getWeekDays = (date: Date) => {
 }
 
 const Calendar = () => {
+  const { language, lt } = useLocaleText()
+  const weekdays = WEEKDAYS[language]
+  const weekdaysFull = WEEKDAYS_FULL[language]
+  const months = MONTHS[language]
+
   const [currentDate, setCurrentDate] = useState(new Date())
   const [viewMode, setViewMode] = useState<ViewMode>('month')
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date())
@@ -75,7 +90,7 @@ const Calendar = () => {
         return {
           startDate: new Date(year, 0, 1),
           endDate: new Date(year, 11, 31, 23, 59, 59),
-          title: `Năm ${year}`,
+          title: lt(`Năm ${year}`, `Year ${year}`),
         }
       case 'week':
         const weekStart = getWeekStart(currentDate)
@@ -91,10 +106,10 @@ const Calendar = () => {
         return {
           startDate: new Date(year, month, 1),
           endDate: new Date(year, month + 1, 0, 23, 59, 59),
-          title: `${MONTHS[month]} ${year}`,
+          title: `${months[month]} ${year}`,
         }
     }
-  }, [currentDate, viewMode])
+  }, [currentDate, lt, months, viewMode])
 
   // Fetch meetings for the current view range
   const { 
@@ -155,17 +170,17 @@ const Calendar = () => {
       {/* Page Header */}
       <div className="page-header">
         <div>
-          <h1 className="page-header__title">Lịch họp</h1>
-          <p className="page-header__subtitle">Quản lý lịch họp của bạn</p>
+          <h1 className="page-header__title">{lt('Lịch họp', 'Calendar')}</h1>
+          <p className="page-header__subtitle">{lt('Quản lý lịch họp của bạn', 'Manage your meeting schedule')}</p>
         </div>
         <div className="page-header__actions">
           <MeetingsViewToggle />
-          <button className="btn btn--ghost" onClick={() => refetch()} title="Làm mới">
+          <button className="btn btn--ghost" onClick={() => refetch()} title={lt('Làm mới', 'Refresh')}>
             <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
           </button>
           <Link to="/app/meetings" className="btn btn--primary">
             <Plus size={16} />
-            Tạo cuộc họp
+            {lt('Tạo cuộc họp', 'Create meeting')}
           </Link>
         </div>
       </div>
@@ -175,7 +190,7 @@ const Calendar = () => {
         <div className="card mb-4" style={{ borderColor: 'var(--error)', borderLeftWidth: 3 }}>
           <div className="card__body" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
             <AlertTriangle size={20} style={{ color: 'var(--error)' }} />
-            <span>Không thể tải dữ liệu. Đang sử dụng dữ liệu mẫu.</span>
+            <span>{lt('Không thể tải dữ liệu. Đang sử dụng dữ liệu mẫu.', 'Unable to load data. Using mock data.')}</span>
           </div>
         </div>
       )}
@@ -194,7 +209,7 @@ const Calendar = () => {
                 <ChevronLeft size={16} />
               </button>
               <button className="btn btn--secondary btn--sm" onClick={goToToday}>
-                Hôm nay
+                {lt('Hôm nay', 'Today')}
               </button>
               <button
                 className="btn btn--ghost btn--icon btn--sm"
@@ -211,26 +226,26 @@ const Calendar = () => {
                 <button 
                   className={`view-toggle__btn ${viewMode === 'year' ? 'view-toggle__btn--active' : ''}`}
                   onClick={() => setViewMode('year')}
-                  title="Xem theo năm"
+                  title={lt('Xem theo năm', 'Year view')}
                 >
                   <Grid3X3 size={16} />
-                  Năm
+                  {lt('Năm', 'Year')}
                 </button>
                 <button 
                   className={`view-toggle__btn ${viewMode === 'month' ? 'view-toggle__btn--active' : ''}`}
                   onClick={() => setViewMode('month')}
-                  title="Xem theo tháng"
+                  title={lt('Xem theo tháng', 'Month view')}
                 >
                   <LayoutGrid size={16} />
-                  Tháng
+                  {lt('Tháng', 'Month')}
                 </button>
                 <button 
                   className={`view-toggle__btn ${viewMode === 'week' ? 'view-toggle__btn--active' : ''}`}
                   onClick={() => setViewMode('week')}
-                  title="Xem theo tuần"
+                  title={lt('Xem theo tuần', 'Week view')}
                 >
                   <CalendarDays size={16} />
-                  Tuần
+                  {lt('Tuần', 'Week')}
                 </button>
               </div>
             </div>
@@ -244,6 +259,8 @@ const Calendar = () => {
                 meetings={meetings || []}
                 selectedDate={selectedDate}
                 onSelectDate={setSelectedDate}
+                weekdays={weekdays}
+                months={months}
               />
             )}
             {viewMode === 'month' && (
@@ -252,6 +269,8 @@ const Calendar = () => {
                 meetings={meetings || []}
                 selectedDate={selectedDate}
                 onSelectDate={setSelectedDate}
+                weekdays={weekdays}
+                moreLabel={lt('thêm', 'more')}
               />
             )}
             {viewMode === 'week' && (
@@ -260,6 +279,9 @@ const Calendar = () => {
                 meetings={meetings || []}
                 selectedDate={selectedDate}
                 onSelectDate={setSelectedDate}
+                weekdays={weekdays}
+                preLabel={lt('Chuẩn bị', 'Pre')}
+                doneLabel={lt('Đã xong', 'Done')}
               />
             )}
           </div>
@@ -275,17 +297,17 @@ const Calendar = () => {
                     {selectedDate.getDate()}
                   </div>
                   <div className="calendar-sidebar__weekday">
-                    {WEEKDAYS_FULL[selectedDate.getDay()]}
+                    {weekdaysFull[selectedDate.getDay()]}
                   </div>
                   <div className="calendar-sidebar__month">
-                    {MONTHS[selectedDate.getMonth()]} {selectedDate.getFullYear()}
+                    {months[selectedDate.getMonth()]} {selectedDate.getFullYear()}
                   </div>
                 </div>
                 {!isToday(selectedDate) && (
                   <button 
                     className="btn btn--ghost btn--icon" 
                     onClick={() => setSelectedDate(null)}
-                    title="Đóng"
+                    title={lt('Đóng', 'Close')}
                   >
                     <X size={18} />
                   </button>
@@ -294,7 +316,7 @@ const Calendar = () => {
             ) : (
               <div className="calendar-sidebar__placeholder">
                 <CalendarIcon size={24} />
-                <span>Chọn một ngày để xem lịch họp</span>
+                <span>{lt('Chọn một ngày để xem lịch họp', 'Select a day to view meetings')}</span>
               </div>
             )}
           </div>
@@ -310,10 +332,10 @@ const Calendar = () => {
               ) : (
                 <div className="calendar-sidebar__empty">
                   <Clock size={32} />
-                  <p>Không có cuộc họp nào</p>
+                  <p>{lt('Không có cuộc họp nào', 'No meetings')}</p>
                   <Link to="/app/meetings" className="btn btn--secondary btn--sm">
                     <Plus size={14} />
-                    Tạo cuộc họp
+                    {lt('Tạo cuộc họp', 'Create meeting')}
                   </Link>
                 </div>
               )}
@@ -331,9 +353,11 @@ interface YearViewProps {
   meetings: NormalizedMeeting[]
   selectedDate: Date | null
   onSelectDate: (date: Date) => void
+  weekdays: string[]
+  months: string[]
 }
 
-const YearView = ({ year, meetings, selectedDate, onSelectDate }: YearViewProps) => {
+const YearView = ({ year, meetings, selectedDate, onSelectDate, weekdays, months }: YearViewProps) => {
   const getMeetingCount = (month: number, day: number) => {
     return meetings.filter(m => 
       m.startTime.getFullYear() === year &&
@@ -344,7 +368,7 @@ const YearView = ({ year, meetings, selectedDate, onSelectDate }: YearViewProps)
 
   return (
     <div className="year-view">
-      {MONTHS.map((monthName, monthIndex) => {
+      {months.map((monthName, monthIndex) => {
         const firstDay = new Date(year, monthIndex, 1)
         const daysInMonth = new Date(year, monthIndex + 1, 0).getDate()
         const startDay = firstDay.getDay()
@@ -355,7 +379,7 @@ const YearView = ({ year, meetings, selectedDate, onSelectDate }: YearViewProps)
           <div key={monthIndex} className="mini-month">
             <div className="mini-month__header">{monthName}</div>
             <div className="mini-month__weekdays">
-              {WEEKDAYS.map(d => <div key={d}>{d}</div>)}
+              {weekdays.map(d => <div key={d}>{d}</div>)}
             </div>
             <div className="mini-month__days">
               {emptyDays.map(i => <div key={`e-${i}`} />)}
@@ -390,9 +414,11 @@ interface MonthViewProps {
   meetings: NormalizedMeeting[]
   selectedDate: Date | null
   onSelectDate: (date: Date) => void
+  weekdays: string[]
+  moreLabel: string
 }
 
-const MonthView = ({ currentDate, meetings, selectedDate, onSelectDate }: MonthViewProps) => {
+const MonthView = ({ currentDate, meetings, selectedDate, onSelectDate, weekdays, moreLabel }: MonthViewProps) => {
   const year = currentDate.getFullYear()
   const month = currentDate.getMonth()
   const firstDay = new Date(year, month, 1)
@@ -430,7 +456,7 @@ const MonthView = ({ currentDate, meetings, selectedDate, onSelectDate }: MonthV
   return (
     <div className="month-view">
       <div className="month-view__header">
-        {WEEKDAYS.map(d => <div key={d} className="month-view__weekday">{d}</div>)}
+        {weekdays.map(d => <div key={d} className="month-view__weekday">{d}</div>)}
       </div>
       <div className="month-view__grid">
         {allDays.map((item, index) => {
@@ -457,7 +483,7 @@ const MonthView = ({ currentDate, meetings, selectedDate, onSelectDate }: MonthV
                   </div>
                 ))}
                 {dayMeetings.length > 3 && (
-                  <div className="month-view__more">+{dayMeetings.length - 3} more</div>
+                  <div className="month-view__more">+{dayMeetings.length - 3} {moreLabel}</div>
                 )}
               </div>
             </div>
@@ -474,9 +500,12 @@ interface WeekViewProps {
   meetings: NormalizedMeeting[]
   selectedDate: Date | null
   onSelectDate: (date: Date) => void
+  weekdays: string[]
+  preLabel: string
+  doneLabel: string
 }
 
-const WeekView = ({ currentDate, meetings, selectedDate, onSelectDate }: WeekViewProps) => {
+const WeekView = ({ currentDate, meetings, selectedDate, onSelectDate, weekdays, preLabel, doneLabel }: WeekViewProps) => {
   const weekDays = getWeekDays(currentDate)
   const hours = Array.from({ length: 12 }, (_, i) => i + 7) // 7am to 6pm
 
@@ -499,7 +528,7 @@ const WeekView = ({ currentDate, meetings, selectedDate, onSelectDate }: WeekVie
               className={`week-view__day-header ${isSelected ? 'week-view__day-header--selected' : ''} ${isTodayDate ? 'week-view__day-header--today' : ''}`}
               onClick={() => onSelectDate(date)}
             >
-              <div className="week-view__weekday">{WEEKDAYS[date.getDay()]}</div>
+              <div className="week-view__weekday">{weekdays[date.getDay()]}</div>
               <div className="week-view__day-number">{date.getDate()}</div>
             </div>
           )
@@ -546,7 +575,7 @@ const WeekView = ({ currentDate, meetings, selectedDate, onSelectDate }: WeekVie
                     <div className="week-view__event-time">{meeting.start}</div>
                     <div className="week-view__event-title">{truncateTitle(meeting.title, 38)}</div>
                     <div className="week-view__event-badge">
-                      {meeting.status === 'in_progress' ? 'LIVE' : meeting.phase === 'pre' ? 'Chuẩn bị' : 'Đã xong'}
+                      {meeting.status === 'in_progress' ? 'LIVE' : meeting.phase === 'pre' ? preLabel : doneLabel}
                     </div>
                   </Link>
                 )
@@ -561,6 +590,7 @@ const WeekView = ({ currentDate, meetings, selectedDate, onSelectDate }: WeekVie
 
 // Meeting Card Component
 const MeetingCard = ({ meeting }: { meeting: NormalizedMeeting }) => {
+  const { lt } = useLocaleText()
   const statusColors = {
     in_progress: 'var(--error)',
     upcoming: 'var(--info)',
@@ -580,14 +610,14 @@ const MeetingCard = ({ meeting }: { meeting: NormalizedMeeting }) => {
           {meeting.start} - {meeting.end}
         </span>
         <span className={`meeting-item__phase meeting-item__phase--${meeting.status === 'in_progress' ? 'live' : meeting.phase}`}>
-          {meeting.status === 'in_progress' ? 'Live' : meeting.phase === 'pre' ? 'Chuẩn bị' : 'Đã xong'}
+          {meeting.status === 'in_progress' ? 'Live' : meeting.phase === 'pre' ? lt('Chuẩn bị', 'Pre') : lt('Đã xong', 'Done')}
         </span>
       </div>
       <h4 className="meeting-card__title">{truncateTitle(meeting.title, 52)}</h4>
       <div className="meeting-card__meta">
         <span>
           <Users size={12} />
-          {meeting.participants} người
+          {meeting.participants} {lt('người', 'people')}
         </span>
         {meeting.location && (
           <span>
@@ -599,7 +629,7 @@ const MeetingCard = ({ meeting }: { meeting: NormalizedMeeting }) => {
       {meeting.teamsLink && (
         <div className="meeting-card__action">
           <Video size={14} />
-          Tham gia Teams
+          {lt('Tham gia Teams', 'Join Teams')}
           <ExternalLink size={12} />
         </div>
       )}
