@@ -729,8 +729,8 @@ const LiveTranscriptPanel = ({
               </div>
             )}
             {audioIngestToken && (
-              <div className="transcript-setup__token" title={audioIngestToken}>
-                token: {audioIngestToken}
+              <div className="transcript-setup__token" title="Token hidden">
+                token: •••• {audioIngestToken.slice(-4)}
               </div>
             )}
           </div>

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useLocation, Link, useNavigate } from 'react-router-dom'
 import { ArrowLeft, HelpCircle, Home, ChevronRight, Search } from 'lucide-react'
 import { useLocaleText } from '../../i18n/useLocaleText'
+import { useLanguage } from '../../contexts/LanguageContext'
 
 const Topbar = () => {
   const location = useLocation()
@@ -9,8 +10,11 @@ const Topbar = () => {
   const navigate = useNavigate()
   const isDockView = /^\/app\/meetings\/[^/]+\/dock/.test(currentPath)
   const { lt } = useLocaleText()
+  const { language, setLanguage } = useLanguage()
 
   const [searchTerm, setSearchTerm] = useState('')
+  const toggleLanguage = () => setLanguage(language === 'vi' ? 'en' : 'vi')
+  const languageSwitchLabel = language === 'vi' ? 'EN' : 'VI'
 
   const routeTitles: Record<string, string> = useMemo(() => ({
     '/': 'Home',
@@ -57,9 +61,18 @@ const Topbar = () => {
           </div>
           <div className="topbar__dock-right">
             <button
+              className="topbar__icon-btn"
+              onClick={toggleLanguage}
+              title={language === 'vi' ? 'Switch to English' : lt('Chuyển sang tiếng Việt', 'Switch to Vietnamese')}
+              type="button"
+            >
+              {languageSwitchLabel}
+            </button>
+            <button
               className="topbar__icon-btn topbar__dock-back"
               onClick={() => navigate(-1)}
               title={lt('Quay lại', 'Back')}
+              type="button"
             >
               <ArrowLeft size={18} />
             </button>
@@ -102,6 +115,14 @@ const Topbar = () => {
           </div>
 
           <div className="topbar__right">
+            <button
+              className="topbar__icon-btn"
+              onClick={toggleLanguage}
+              title={language === 'vi' ? 'Switch to English' : lt('Chuyển sang tiếng Việt', 'Switch to Vietnamese')}
+              type="button"
+            >
+              {languageSwitchLabel}
+            </button>
             <Link to="/about" className="topbar__icon-btn" title={lt('Giới thiệu Minute', 'About Minute')}>
               <HelpCircle size={18} />
             </Link>
@@ -113,4 +134,3 @@ const Topbar = () => {
 }
 
 export default Topbar
-

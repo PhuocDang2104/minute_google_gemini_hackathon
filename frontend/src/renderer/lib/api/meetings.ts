@@ -100,8 +100,26 @@ export const meetingsApi = {
   /**
    * Trigger inference (transcription + diarization) from video
    */
-  triggerInference: async (meetingId: string): Promise<{ status: string; message: string; transcript_count?: number; minutes_id?: string; pdf_url?: string }> => {
-    return api.post<{ status: string; message: string; transcript_count?: number; minutes_id?: string; pdf_url?: string }>(`${ENDPOINT}/${meetingId}/trigger-inference`, {});
+  triggerInference: async (
+    meetingId: string,
+  ): Promise<{
+    status: string;
+    message: string;
+    transcript_count?: number;
+    visual_event_count?: number;
+    visual_object_count?: number;
+    minutes_id?: string;
+    pdf_url?: string;
+  }> => {
+    return api.post<{
+      status: string;
+      message: string;
+      transcript_count?: number;
+      visual_event_count?: number;
+      visual_object_count?: number;
+      minutes_id?: string;
+      pdf_url?: string;
+    }>(`${ENDPOINT}/${meetingId}/trigger-inference`, {});
   },
 
   /**

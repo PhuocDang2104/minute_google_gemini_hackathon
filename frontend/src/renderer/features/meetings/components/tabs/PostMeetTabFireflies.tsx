@@ -121,6 +121,7 @@ export const PostMeetTabFireflies = ({ meeting, onRefresh }: PostMeetTabFireflie
   const [isGenerating, setIsGenerating] = useState(false);
   const [isUploadingVideo, setIsUploadingVideo] = useState(false);
   const [isProcessingVideo, setIsProcessingVideo] = useState(false);
+  const [videoProofText, setVideoProofText] = useState<string | null>(null);
 
   const [templates, setTemplates] = useState<MinutesTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
@@ -143,6 +144,7 @@ export const PostMeetTabFireflies = ({ meeting, onRefresh }: PostMeetTabFireflie
   useEffect(() => {
     loadAllData();
     loadTemplates();
+    setVideoProofText(null);
   }, [meeting.id]);
 
   const loadTemplates = async () => {
@@ -984,8 +986,12 @@ const CenterPanel = ({
 
         // Refresh meeting data to load new transcripts
         await onRefresh();
-
-        alert(`Video đã được tải lên và xử lý thành công. Đã tạo ${inferenceResult.transcript_count || 0} transcript chunks.`);
+        const transcriptCount = inferenceResult.transcript_count || 0;
+        const visualEventCount = inferenceResult.visual_event_count || 0;
+        const visualObjectCount = inferenceResult.visual_object_count || 0;
+        setVideoProofText(
+          `Transcript segments: ${transcriptCount} · Visual events: ${visualEventCount}${visualObjectCount ? ` · Objects: ${visualObjectCount}` : ''}`,
+        );
       } catch (inferenceErr: any) {
         console.error('Video inference failed:', inferenceErr);
         alert(`Video đã được tải lên nhưng xử lý gặp lỗi: ${inferenceErr.message || 'Không thể tạo transcript'}. Vui lòng kiểm tra logs backend.`);
@@ -1062,6 +1068,7 @@ const CenterPanel = ({
 
       // Refresh meeting data
       await onRefresh();
+      setVideoProofText(null);
 
       alert('Video đã được xóa thành công.');
     } catch (err: any) {
@@ -1118,6 +1125,7 @@ const CenterPanel = ({
         onSetLocalUrl={handleSetLocalUrl}
         isUploading={isUploadingVideo}
         isProcessing={isProcessingVideo}
+        proofText={videoProofText}
         dragActive={dragActive}
         onDrag={handleDrag}
         onDrop={handleDrop}
@@ -1514,6 +1522,7 @@ interface VideoSectionProps {
   onSetLocalUrl: (url: string) => void;
   isUploading: boolean;
   isProcessing: boolean;
+  proofText?: string | null;
   dragActive: boolean;
   onDrag: (e: React.DragEvent) => void;
   onDrop: (e: React.DragEvent) => void;
@@ -1529,6 +1538,7 @@ const VideoSection = ({
   onSetLocalUrl,
   isUploading,
   isProcessing,
+  proofText,
   dragActive,
   onDrag,
   onDrop,
@@ -1565,6 +1575,11 @@ const VideoSection = ({
             >
               <Trash2 size={16} />
             </button>
+          </div>
+        )}
+        {proofText && !isProcessing && !isUploading && (
+          <div style={{ margin: '0 0 10px', fontSize: 12, color: 'var(--text-muted)' }}>
+            {proofText}
           </div>
         )}
         <div className="fireflies-video-player">
