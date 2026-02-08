@@ -1391,6 +1391,19 @@ a {
   border-color: var(--text-muted);
 }
 
+.btn--error {
+  background: var(--error);
+  color: #ffffff;
+  border-color: var(--error);
+  box-shadow: 0 8px 20px rgba(239, 68, 68, 0.22);
+}
+
+.btn--error:hover {
+  background: #dc2626;
+  border-color: #dc2626;
+  box-shadow: 0 10px 24px rgba(220, 38, 38, 0.28);
+}
+
 .btn--ghost {
   background: transparent;
   color: var(--text-secondary);

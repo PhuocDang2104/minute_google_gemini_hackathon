@@ -276,7 +276,7 @@ const ProjectDetail = () => {
           <Calendar size={16} />
           <div>
             <span>{stats.meetings}</span>
-            <small>{lt('Phiên họp', 'Sessions')}</small>
+            <small>{lt('Phiên họp/học', 'Sessions')}</small>
           </div>
         </div>
         <div className="project-stat">
@@ -293,7 +293,7 @@ const ProjectDetail = () => {
           {lt('Tổng quan', 'Overview')}
         </button>
         <button className={activeTab === 'meetings' ? 'active' : ''} onClick={() => setActiveTab('meetings')}>
-          {lt('Phiên họp', 'Sessions')}
+          {lt('Phiên họp/học', 'Sessions')}
         </button>
         <button className={activeTab === 'documents' ? 'active' : ''} onClick={() => setActiveTab('documents')}>
           {lt('Tài liệu', 'Documents')}
@@ -307,7 +307,7 @@ const ProjectDetail = () => {
             <p>{project.objective || lt('Chưa có mục tiêu cụ thể. Hãy bổ sung để đội ngũ thống nhất hướng đi.', 'No objective yet. Add one to align the team.')}</p>
           </div>
           <div className="project-overview__card">
-            <h3>{lt('Phiên họp gần đây', 'Recent sessions')}</h3>
+            <h3>{lt('Phiên họp/học gần đây', 'Recent sessions')}</h3>
             {meetings.length === 0 ? (
               <div className="project-empty">{lt('Chưa có phiên nào. Tạo phiên đầu tiên cho dự án.', 'No sessions yet. Create the first one for this project.')}</div>
             ) : (
