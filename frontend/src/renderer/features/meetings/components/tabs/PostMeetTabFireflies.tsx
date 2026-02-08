@@ -35,6 +35,7 @@ import { transcriptsApi } from '../../../../lib/api/transcripts';
 import { itemsApi, type ActionItem, type DecisionItem, type RiskItem } from '../../../../lib/api/items';
 import { meetingsApi } from '../../../../lib/api/meetings';
 import { minutesTemplateApi, type MinutesTemplate } from '../../../../lib/api/minutes_template';
+import { knowledgeApi, type KnowledgeDocument } from '../../../../lib/api/knowledge';
 import { UploadDocumentModal } from '../../../../components/UploadDocumentModal';
 
 interface PostMeetTabFirefliesProps {
@@ -334,6 +335,7 @@ export const PostMeetTabFireflies = ({ meeting, onRefresh }: PostMeetTabFireflie
       {!isEmptySession && (
         <LeftPanel
           meetingId={meeting.id}
+          projectId={meeting.project_id}
           filters={filters}
           setFilters={setFilters}
           actionItems={actionItems}
@@ -382,18 +384,67 @@ export const PostMeetTabFireflies = ({ meeting, onRefresh }: PostMeetTabFireflie
 // ==================== Left Panel - Filters ====================
 interface LeftPanelProps {
   meetingId: string;
+  projectId?: string;
   filters: FilterState;
   setFilters: (filters: FilterState) => void;
   actionItems: ActionItem[];
   transcripts: TranscriptChunk[];
 }
 
-const LeftPanel = ({ meetingId, filters, setFilters, actionItems, transcripts }: LeftPanelProps) => {
+const LeftPanel = ({ meetingId, projectId, filters, setFilters, actionItems, transcripts }: LeftPanelProps) => {
   const [expandedSections, setExpandedSections] = useState({
     filters: true,
     topics: true,
   });
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
+  const [docsLoading, setDocsLoading] = useState(false);
+
+  const isUuid = (value?: string) =>
+    !!value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+  const safeMeetingId = isUuid(meetingId) ? meetingId : undefined;
+  const safeProjectId = isUuid(projectId) ? projectId : undefined;
+
+  const loadDocuments = async () => {
+    setDocsLoading(true);
+    try {
+      const [meetingDocs, projectDocs, allDocs] = await Promise.all([
+        safeMeetingId
+          ? knowledgeApi.list({ limit: 30, meeting_id: safeMeetingId })
+          : Promise.resolve({ documents: [], total: 0 }),
+        safeProjectId
+          ? knowledgeApi.list({ limit: 30, project_id: safeProjectId })
+          : Promise.resolve({ documents: [], total: 0 }),
+        knowledgeApi.list({ limit: 100 }),
+      ]);
+      const merged = new Map<string, KnowledgeDocument>();
+      [...meetingDocs.documents, ...projectDocs.documents].forEach((doc) => merged.set(doc.id, doc));
+      if (merged.size === 0) {
+        allDocs.documents.forEach((doc) => {
+          if (
+            doc.meeting_id === meetingId ||
+            (projectId && doc.project_id === projectId)
+          ) {
+            merged.set(doc.id, doc);
+          }
+        });
+      }
+      if (merged.size === 0 && (!safeMeetingId || !safeProjectId)) {
+        // Demo fallback when ids are not UUID and backend cannot bind scope.
+        allDocs.documents.slice(0, 6).forEach((doc) => merged.set(doc.id, doc));
+      }
+      setDocuments(Array.from(merged.values()));
+    } catch (err) {
+      console.error('Failed to load session documents:', err);
+      setDocuments([]);
+    } finally {
+      setDocsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadDocuments();
+  }, [meetingId, projectId]);
 
   const toggleSection = (section: keyof typeof expandedSections) => {
     setExpandedSections({ ...expandedSections, [section]: !expandedSections[section] });
@@ -427,6 +478,47 @@ const LeftPanel = ({ meetingId, filters, setFilters, actionItems, transcripts }:
         <button className="btn btn--secondary btn--sm" onClick={() => setShowUploadModal(true)}>
           Tải tài liệu
         </button>
+      </div>
+
+      <div className="fireflies-filter-section" style={{ marginBottom: 12 }}>
+        <div className="fireflies-filter-section__header">
+          <h4 style={{ margin: 0 }}>Session Documents ({documents.length})</h4>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+          {docsLoading ? (
+            <div className="fireflies-empty">
+              <p>Loading documents...</p>
+            </div>
+          ) : documents.length === 0 ? (
+            <div className="fireflies-empty">
+              <p>Chưa có tài liệu trong session</p>
+            </div>
+          ) : (
+            documents.slice(0, 6).map((doc) => (
+              <a
+                key={doc.id}
+                href={doc.file_url || '#'}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  textDecoration: 'none',
+                  color: 'var(--text-primary)',
+                  border: '1px solid var(--border-light)',
+                  borderRadius: 10,
+                  padding: '8px 10px',
+                  display: 'block',
+                }}
+              >
+                <div style={{ fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {doc.title}
+                </div>
+                <div style={{ fontSize: 11, opacity: 0.7 }}>
+                  {(doc.file_type || 'file').toUpperCase()} • {doc.source || 'Uploaded'}
+                </div>
+              </a>
+            ))
+          )}
+        </div>
       </div>
 
       {/* Search */}
@@ -496,8 +588,12 @@ const LeftPanel = ({ meetingId, filters, setFilters, actionItems, transcripts }:
       <UploadDocumentModal
         isOpen={showUploadModal}
         onClose={() => setShowUploadModal(false)}
-        onSuccess={() => setShowUploadModal(false)}
-        meetingId={meetingId}
+        onSuccess={() => {
+          setShowUploadModal(false);
+          loadDocuments();
+        }}
+        meetingId={safeMeetingId}
+        projectId={safeProjectId}
       />
     </div>
   );
