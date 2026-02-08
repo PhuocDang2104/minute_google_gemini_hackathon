@@ -19,6 +19,15 @@ from .timeline import RecapSegment, VisualEvent, VisualObjectEvent, ContextWindo
 from .summary import MeetingSummary
 from .study import NoteItem, QuizItem
 from .meeting_recording import MeetingRecording
+from .realtime_av import (
+    SessionRoi,
+    AudioRecord,
+    TranscriptSegment,
+    CapturedFrame,
+    RecapWindow,
+    ToolCallProposal,
+    QnaEventLog,
+)
 
 __all__ = [
     'Organization',
@@ -50,4 +59,11 @@ __all__ = [
     'MeetingRecording',
     'NoteItem',
     'QuizItem',
+    'SessionRoi',
+    'AudioRecord',
+    'TranscriptSegment',
+    'CapturedFrame',
+    'RecapWindow',
+    'ToolCallProposal',
+    'QnaEventLog',
 ]
