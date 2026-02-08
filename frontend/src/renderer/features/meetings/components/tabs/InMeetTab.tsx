@@ -1,22 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
+  BookOpen,
   Calendar,
   Check,
   CheckSquare,
   Clock,
   Edit3,
   FileText,
-  Link as LinkIcon,
   Mic,
   Search,
+  Sigma,
   Sparkles,
   User,
-  Wand2,
   X,
 } from 'lucide-react';
 import type { MeetingWithParticipants } from '../../../../shared/dto/meeting';
-import { actionItems, decisions, formatDuration, risks } from '../../../../store/mockData';
+import { formatDuration } from '../../../../store/mockData';
 import { API_URL, USE_API } from '../../../../config/env';
 import { sessionsApi } from '../../../../lib/api';
 
@@ -66,6 +66,16 @@ type AdrRisk = {
   severity?: string;
   owner?: string;
   detail?: string;
+};
+
+type SessionKind = 'meeting' | 'course';
+
+type CourseHighlight = {
+  id: string;
+  kind: 'concept' | 'formula' | 'example' | 'note';
+  title: string;
+  bullet: string;
+  formula?: string;
 };
 
 const normalizeAdrActions = (items: any[]): AdrAction[] => {
@@ -119,6 +129,28 @@ const normalizeAdrRisks = (items: any[]): AdrRisk[] => {
   }));
 };
 
+const normalizeCourseHighlights = (items: any[]): CourseHighlight[] => {
+  if (!Array.isArray(items)) return [];
+  return items
+    .map((item, idx) => {
+      const kindRaw = String(item?.kind || 'concept').toLowerCase();
+      const kind: CourseHighlight['kind'] =
+        kindRaw === 'formula' || kindRaw === 'example' || kindRaw === 'note' ? kindRaw : 'concept';
+      const title = String(item?.title || item?.bullet || '').trim();
+      const bullet = String(item?.bullet || item?.title || '').trim();
+      const formula = String(item?.formula || '').trim();
+      if (!title && !bullet) return null;
+      return {
+        id: String(item?.id || `highlight-${idx}`),
+        kind,
+        title: title || bullet,
+        bullet: bullet || title,
+        formula: formula || undefined,
+      };
+    })
+    .filter((item): item is CourseHighlight => item !== null);
+};
+
 const formatAdrDate = (value?: string) => {
   if (!value) return '—';
   const parsed = new Date(value);
@@ -163,14 +195,16 @@ export const InMeetTab = ({
     { id: string; speaker: string; text: string; time: number }[]
   >([]);
   const [liveRecap, setLiveRecap] = useState<string | null>(null);
-  const [semanticIntent, setSemanticIntent] = useState('NO_INTENT');
+  const initialSessionKind: SessionKind = meeting.meeting_type === 'study_session' ? 'course' : 'meeting';
+  const [sessionKind, setSessionKind] = useState<SessionKind>(initialSessionKind);
+  const [modelName, setModelName] = useState<string>('LLM');
   const [currentTopicId, setCurrentTopicId] = useState('T0');
   const [topicSegments, setTopicSegments] = useState<TopicSegmentState[]>([]);
   const [recapItems, setRecapItems] = useState<RecapItem[]>([]);
   const [liveActions, setLiveActions] = useState<AdrAction[]>([]);
   const [liveDecisions, setLiveDecisions] = useState<AdrDecision[]>([]);
   const [liveRisks, setLiveRisks] = useState<AdrRisk[]>([]);
-  const [hasLiveAdr, setHasLiveAdr] = useState(false);
+  const [courseHighlights, setCourseHighlights] = useState<CourseHighlight[]>([]);
   const [audioIngestToken, setAudioIngestToken] = useState<string | null>(
     initialAudioIngestToken || null,
   );
@@ -197,51 +231,23 @@ export const InMeetTab = ({
     setFinalTranscript([]);
     setLastTranscriptAt(null);
     setLastAudioIngestAt(null);
+    setSessionKind(initialSessionKind);
+    setModelName('LLM');
+    setCourseHighlights([]);
+    setLiveActions([]);
+    setLiveDecisions([]);
+    setLiveRisks([]);
+    setRecapItems([]);
+    setLiveRecap(null);
     timelineOriginMsRef.current = null;
     transcriptKeySetRef.current = new Set();
     hasRecordTranscriptRef.current = false;
     lastFinalTimeRef.current = 0;
-  }, [sessionIdForStream]);
+  }, [initialSessionKind, sessionIdForStream]);
 
-  const actions = useMemo<AdrAction[]>(() => {
-    const scoped = actionItems.filter(a => a.meetingId === meeting.id).slice(0, 4);
-    const source = scoped.length > 0 ? scoped : actionItems.slice(0, 3);
-    return source.map(item => ({
-      id: item.id,
-      description: item.description,
-      owner: item.owner.displayName,
-      deadline: item.deadline.toISOString(),
-      priority: item.priority,
-      detail: item.sourceText,
-    }));
-  }, [meeting.id]);
-
-  const meetingDecisions = useMemo<AdrDecision[]>(() => {
-    const scoped = decisions.filter(d => d.meetingId === meeting.id).slice(0, 3);
-    const source = scoped.length > 0 ? scoped : decisions.slice(0, 2);
-    return source.map(item => ({
-      id: item.id,
-      description: item.description,
-      confirmedBy: item.confirmedBy.displayName,
-      detail: item.rationale,
-    }));
-  }, [meeting.id]);
-
-  const meetingRisks = useMemo<AdrRisk[]>(() => {
-    const scoped = risks.filter(r => r.meetingId === meeting.id).slice(0, 3);
-    const source = scoped.length > 0 ? scoped : risks.slice(0, 2);
-    return source.map(item => ({
-      id: item.id,
-      description: item.description,
-      severity: item.severity,
-      owner: item.owner.displayName,
-      detail: item.mitigation,
-    }));
-  }, [meeting.id]);
-
-  const resolvedActions = hasLiveAdr ? liveActions : actions;
-  const resolvedDecisions = hasLiveAdr ? liveDecisions : meetingDecisions;
-  const resolvedRisks = hasLiveAdr ? liveRisks : meetingRisks;
+  const resolvedActions = liveActions;
+  const resolvedDecisions = liveDecisions;
+  const resolvedRisks = liveRisks;
 
   const currentTopicTitle = useMemo(() => {
     const match = topicSegments.find(seg => seg.topic_id === currentTopicId);
@@ -373,15 +379,14 @@ export const InMeetTab = ({
           setLastAudioIngestAt(Date.now());
         } else if (data?.event === 'state') {
           const p = data.payload || {};
-          const intentLabel =
-            typeof p.intent_payload?.label === 'string'
-              ? p.intent_payload.label
-              : typeof p.semantic_intent_label === 'string'
-                ? p.semantic_intent_label
-                : undefined;
-          if (intentLabel) {
-            setSemanticIntent(intentLabel || 'NO_INTENT');
+          if (typeof p.model_name === 'string' && p.model_name.trim().length > 0) {
+            setModelName(p.model_name.trim());
           }
+          const nextSessionKind: SessionKind =
+            p.session_kind === 'course' || p.session_kind === 'meeting'
+              ? p.session_kind
+              : initialSessionKind;
+          setSessionKind(nextSessionKind);
 
           const topicId =
             typeof p.topic?.topic_id === 'string'
@@ -414,8 +419,14 @@ export const InMeetTab = ({
                 currentTopicId ||
                 'T0';
               const nextSegments = Array.isArray(p.topic_segments) ? p.topic_segments : topicSegments;
+              const topicTitleFromTopic =
+                typeof p.topic?.title === 'string' && p.topic.title.trim().length > 0
+                  ? p.topic.title.trim()
+                  : '';
               const topicTitle =
-                nextSegments.find((seg: TopicSegmentState) => seg.topic_id === nextTopicId)?.title || nextTopicId;
+                nextSegments.find((seg: TopicSegmentState) => seg.topic_id === nextTopicId)?.title ||
+                topicTitleFromTopic ||
+                nextTopicId;
               const timeLabel = formatDuration(Math.max(0, Math.floor(lastFinalTimeRef.current || 0)));
               const entry: RecapItem = {
                 id: `${Date.now()}`,
@@ -426,9 +437,7 @@ export const InMeetTab = ({
               return [...prev, entry].slice(-5);
             });
           }
-          if (Array.isArray(p.actions) || Array.isArray(p.decisions) || Array.isArray(p.risks)) {
-            setHasLiveAdr(true);
-          }
+
           if (Array.isArray(p.actions)) {
             setLiveActions(normalizeAdrActions(p.actions));
           }
@@ -437,6 +446,18 @@ export const InMeetTab = ({
           }
           if (Array.isArray(p.risks)) {
             setLiveRisks(normalizeAdrRisks(p.risks));
+          }
+          if (Array.isArray(p.course_highlights)) {
+            setCourseHighlights(normalizeCourseHighlights(p.course_highlights));
+          } else if (nextSessionKind === 'course' && Array.isArray(p.cheatsheet)) {
+            const fallbackHighlights = p.cheatsheet.map((item: any, idx: number) => ({
+              id: `cheatsheet-${idx}`,
+              kind: 'concept',
+              title: String(item?.term || '').trim(),
+              bullet: String(item?.definition || '').trim(),
+              formula: '',
+            }));
+            setCourseHighlights(normalizeCourseHighlights(fallbackHighlights));
           }
         }
       } catch (_e) {
@@ -506,17 +527,21 @@ export const InMeetTab = ({
             <div className="inmeet-insights">
               <LiveSignalPanel
                 liveRecap={liveRecap}
-                semanticIntent={semanticIntent}
+                modelName={modelName}
+                sessionKind={sessionKind}
                 currentTopicTitle={currentTopicTitle}
                 topicLog={topicLog}
               />
               <LiveRecapPanel recapItems={recapItems} currentTopicTitle={currentTopicTitle} />
-              <AdrPanel
-                actions={resolvedActions}
-                decisions={resolvedDecisions}
-                risks={resolvedRisks}
-              />
-              <ToolSuggestionsPanel />
+              {sessionKind === 'course' ? (
+                <CourseHighlightsPanel items={courseHighlights} />
+              ) : (
+                <AdrPanel
+                  actions={resolvedActions}
+                  decisions={resolvedDecisions}
+                  risks={resolvedRisks}
+                />
+              )}
             </div>
           )}
         </div>
@@ -921,12 +946,14 @@ const RealtimeTranscriptPanel = ({
 
 const LiveSignalPanel = ({
   liveRecap,
-  semanticIntent,
+  modelName,
+  sessionKind,
   currentTopicTitle,
   topicLog,
 }: {
   liveRecap: string | null;
-  semanticIntent: string;
+  modelName: string;
+  sessionKind: SessionKind;
   currentTopicTitle: string;
   topicLog: { id: string; time: string; text: string }[];
 }) => {
@@ -935,9 +962,9 @@ const LiveSignalPanel = ({
       <div className="live-signal-card__header">
         <div className="badge badge--ghost badge--pill">
           <Sparkles size={14} />
-          Live recap | Semantic Router
+          {sessionKind === 'course' ? 'Live recap | Course' : 'Live recap | Meeting'}
         </div>
-        <span className="meta-chip">SmartBot VNPT</span>
+        <span className="meta-chip">{modelName || 'LLM'}</span>
       </div>
 
       <div className="live-signal-card__section live-signal-card__chat">
@@ -949,15 +976,9 @@ const LiveSignalPanel = ({
         </div>
       </div>
 
-      <div className="live-signal-card__section live-signal-card__inline">
-        <div>
-          <div className="live-signal-label">Intent</div>
-          <div className="pill pill--live">{semanticIntent || 'NO_INTENT'}</div>
-        </div>
-        <div>
-          <div className="live-signal-label">Topic</div>
-          <div className="pill">{currentTopicTitle || 'T0'}</div>
-        </div>
+      <div className="live-signal-card__section">
+        <div className="live-signal-label">Topic</div>
+        <div className="pill">{currentTopicTitle || 'T0'}</div>
       </div>
 
       <div className="live-signal-card__section">
@@ -993,7 +1014,7 @@ const LiveRecapPanel = ({
       <div className="recap-panel__header">
         <div className="badge badge--ghost badge--pill">
           <Sparkles size={14} />
-          Current Recap
+          Overall Recap
         </div>
         <span className="meta-chip">
           <Calendar size={12} />
@@ -1134,63 +1155,38 @@ const AdrPanel = ({
   );
 };
 
-const ToolSuggestionsPanel = () => {
-  const suggestions = [
-    {
-      id: 'ts1',
-      type: 'task',
-      title: 'Tạo task Jira: Penetration Test follow-up',
-      detail: 'Owner: Hoàng Thị E · Due: 12/12 · Priority: High',
-      actionLabel: 'Tạo task',
-    },
-    {
-      id: 'ts2',
-      type: 'schedule',
-      title: 'Đặt lịch follow-up performance review',
-      detail: '30 phút, tuần này, mời PMO + Core Banking',
-      actionLabel: 'Đặt lịch',
-    },
-    {
-      id: 'ts3',
-      type: 'doc',
-      title: 'Mở tài liệu: NHNN Circular 09/2020',
-      detail: 'Trang 12: Data retention policy',
-      actionLabel: 'Mở tài liệu',
-    },
-  ];
-
+const CourseHighlightsPanel = ({ items }: { items: CourseHighlight[] }) => {
   return (
-    <div className="tool-panel">
-      <div className="tool-panel__header">
-        <div className="badge badge--ghost badge--pill">
-          <Wand2 size={14} />
-          Tool suggestions
-        </div>
-        <span className="meta-chip">
-          <LinkIcon size={12} />
-          Planner / Calendar / Docs
-        </span>
+    <div className="detected-panel detected-panel--elevated">
+      <div className="detected-tabs detected-tabs--solid">
+        <button className="detected-tab detected-tab--active" type="button">
+          <BookOpen size={14} />
+          Highlight Concepts ({items.length})
+        </button>
       </div>
-      <div className="tool-panel__list">
-        {suggestions.map(s => (
-          <div key={s.id} className="tool-card">
-            <div className="tool-card__icon">
-              {s.type === 'task' && <CheckSquare size={14} />}
-              {s.type === 'schedule' && <Calendar size={14} />}
-              {s.type === 'doc' && <FileText size={14} />}
+      <div className="detected-content detected-content--dense">
+        {items.length === 0 ? (
+          <div className="empty-state empty-state--inline">Chưa có highlight học tập.</div>
+        ) : (
+          items.map(item => (
+            <div key={item.id} className="detected-item detected-item--decision">
+              <div className="detected-item__content">
+                <div className="detected-item__text">{item.title}</div>
+                <div className="detected-item__detail">{item.bullet}</div>
+                <div className="detected-item__meta">
+                  {item.kind === 'formula' ? <Sigma size={12} /> : <BookOpen size={12} />}
+                  {item.kind}
+                  {item.formula && (
+                    <>
+                      <span className="dot"></span>
+                      <code>{item.formula}</code>
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
-            <div className="tool-card__body">
-              <div className="tool-card__title">{s.title}</div>
-              <div className="tool-card__detail">{s.detail}</div>
-            </div>
-            <div className="tool-card__actions">
-              <button className="btn btn--primary btn--sm">{s.actionLabel}</button>
-              <button className="btn btn--ghost btn--icon btn--sm">
-                <X size={14} />
-              </button>
-            </div>
-          </div>
-        ))}
+          ))
+        )}
       </div>
     </div>
   );

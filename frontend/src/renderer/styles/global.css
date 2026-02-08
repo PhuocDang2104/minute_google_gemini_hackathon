@@ -6839,16 +6839,20 @@ a {
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
+  height: auto;
 }
 
 .recap-item {
   display: grid;
   grid-template-columns: auto 1fr;
+  align-items: flex-start;
   gap: var(--space-md);
   padding: var(--space-sm) var(--space-md);
   border-radius: var(--radius-sm);
   background: var(--bg-base);
   border: 1px solid var(--border);
+  height: auto;
+  min-height: 0;
 }
 
 .recap-item__time {
@@ -6860,10 +6864,16 @@ a {
 .recap-item__body p {
   margin: 0;
   font-size: 13px;
+  line-height: 1.55;
   color: var(--text-secondary);
-  white-space: pre-line;
+  white-space: pre-wrap;
   word-break: break-word;
   overflow-wrap: anywhere;
+  overflow: visible;
+}
+
+.recap-item__body {
+  min-width: 0;
 }
 
 .recap-item__topic {

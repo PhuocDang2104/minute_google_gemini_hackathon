@@ -163,6 +163,13 @@ def _cleanup_text(value: Any) -> str:
     return re.sub(r"\s+", " ", text_value).strip()
 
 
+def _coerce_float(value: Any, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
 @dataclass(frozen=True)
 class Roi:
     x: int
@@ -243,6 +250,8 @@ class SessionRealtimeAV:
     session_id: str
     meeting_id: str
     started_ts_ms: int
+    meeting_type: str = "project_meeting"
+    session_kind: str = "meeting"
     paused: bool = False
     audio: AudioRecorderState = field(default_factory=AudioRecorderState)
     video: VideoDetectorState = field(default_factory=VideoDetectorState)
@@ -259,6 +268,8 @@ class RealtimeAVService:
     def __init__(self) -> None:
         self._sessions: Dict[str, SessionRealtimeAV] = {}
         self._lock = threading.Lock()
+        self._schema_lock = threading.Lock()
+        self._schema_ensured = False
         self.record_ms = max(1000, int(getattr(settings, "realtime_av_record_ms", 30_000)))
         self.window_ms = max(10_000, int(getattr(settings, "realtime_av_window_ms", 120_000)))
         self.window_overlap_ms = max(0, int(getattr(settings, "realtime_av_window_overlap_ms", 15_000)))
@@ -273,8 +284,369 @@ class RealtimeAVService:
         self.detect_width = max(64, int(getattr(settings, "realtime_av_detection_width", 320)))
         self.detect_height = max(36, int(getattr(settings, "realtime_av_detection_height", 180)))
 
+    def _ensure_realtime_schema(self) -> None:
+        if self._schema_ensured:
+            return
+        with self._schema_lock:
+            if self._schema_ensured:
+                return
+            db = SessionLocal()
+            try:
+                statements = [
+                    """
+                    CREATE TABLE IF NOT EXISTS session_roi (
+                        session_id TEXT PRIMARY KEY,
+                        meeting_id UUID REFERENCES meeting(id) ON DELETE SET NULL,
+                        x INT NOT NULL,
+                        y INT NOT NULL,
+                        w INT NOT NULL,
+                        h INT NOT NULL,
+                        created_at TIMESTAMPTZ DEFAULT NOW(),
+                        updated_at TIMESTAMPTZ DEFAULT NOW()
+                    );
+                    """,
+                    "CREATE INDEX IF NOT EXISTS idx_session_roi_meeting ON session_roi(meeting_id);",
+                    """
+                    CREATE TABLE IF NOT EXISTS audio_record (
+                        id UUID PRIMARY KEY,
+                        session_id TEXT NOT NULL,
+                        meeting_id UUID REFERENCES meeting(id) ON DELETE SET NULL,
+                        record_id BIGINT NOT NULL,
+                        start_ts_ms BIGINT NOT NULL,
+                        end_ts_ms BIGINT NOT NULL,
+                        uri TEXT,
+                        format TEXT DEFAULT 'wav_pcm_s16le_16k_mono',
+                        checksum TEXT,
+                        status TEXT DEFAULT 'ready',
+                        asr_payload JSONB,
+                        created_at TIMESTAMPTZ DEFAULT NOW(),
+                        UNIQUE(session_id, record_id)
+                    );
+                    """,
+                    "CREATE INDEX IF NOT EXISTS idx_audio_record_session ON audio_record(session_id, record_id);",
+                    "CREATE INDEX IF NOT EXISTS idx_audio_record_meeting ON audio_record(meeting_id, start_ts_ms);",
+                    """
+                    CREATE TABLE IF NOT EXISTS transcript_segment (
+                        seg_id TEXT PRIMARY KEY,
+                        session_id TEXT NOT NULL,
+                        meeting_id UUID REFERENCES meeting(id) ON DELETE SET NULL,
+                        record_id BIGINT,
+                        speaker TEXT NOT NULL DEFAULT 'SPEAKER_01',
+                        "offset" TEXT,
+                        start_ts_ms BIGINT NOT NULL,
+                        end_ts_ms BIGINT,
+                        text TEXT NOT NULL,
+                        confidence FLOAT DEFAULT 1.0,
+                        created_at TIMESTAMPTZ DEFAULT NOW()
+                    );
+                    """,
+                    "CREATE INDEX IF NOT EXISTS idx_transcript_segment_session_time ON transcript_segment(session_id, start_ts_ms);",
+                    "CREATE INDEX IF NOT EXISTS idx_transcript_segment_meeting_time ON transcript_segment(meeting_id, start_ts_ms);",
+                    "CREATE INDEX IF NOT EXISTS idx_transcript_segment_record ON transcript_segment(session_id, record_id);",
+                    """
+                    CREATE TABLE IF NOT EXISTS captured_frame (
+                        frame_id TEXT PRIMARY KEY,
+                        session_id TEXT NOT NULL,
+                        meeting_id UUID REFERENCES meeting(id) ON DELETE SET NULL,
+                        ts_ms BIGINT NOT NULL,
+                        roi JSONB NOT NULL,
+                        checksum TEXT,
+                        uri TEXT NOT NULL,
+                        diff_score JSONB,
+                        capture_reason TEXT DEFAULT 'change_confirmed',
+                        created_at TIMESTAMPTZ DEFAULT NOW()
+                    );
+                    """,
+                    "CREATE INDEX IF NOT EXISTS idx_captured_frame_session_time ON captured_frame(session_id, ts_ms);",
+                    "CREATE INDEX IF NOT EXISTS idx_captured_frame_meeting_time ON captured_frame(meeting_id, ts_ms);",
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_captured_frame_session_checksum ON captured_frame(session_id, checksum) WHERE checksum IS NOT NULL;",
+                    """
+                    CREATE TABLE IF NOT EXISTS recap_window (
+                        id UUID PRIMARY KEY,
+                        window_id TEXT NOT NULL,
+                        session_id TEXT NOT NULL,
+                        meeting_id UUID REFERENCES meeting(id) ON DELETE SET NULL,
+                        start_ts_ms BIGINT NOT NULL,
+                        end_ts_ms BIGINT NOT NULL,
+                        revision INT NOT NULL DEFAULT 1,
+                        recap JSONB NOT NULL DEFAULT '[]'::jsonb,
+                        topics JSONB NOT NULL DEFAULT '[]'::jsonb,
+                        cheatsheet JSONB NOT NULL DEFAULT '[]'::jsonb,
+                        citations JSONB NOT NULL DEFAULT '[]'::jsonb,
+                        status TEXT DEFAULT 'ready',
+                        created_at TIMESTAMPTZ DEFAULT NOW(),
+                        updated_at TIMESTAMPTZ DEFAULT NOW(),
+                        UNIQUE(window_id, revision)
+                    );
+                    """,
+                    "CREATE INDEX IF NOT EXISTS idx_recap_window_session_time ON recap_window(session_id, start_ts_ms);",
+                    "CREATE INDEX IF NOT EXISTS idx_recap_window_meeting_time ON recap_window(meeting_id, start_ts_ms);",
+                    """
+                    CREATE TABLE IF NOT EXISTS tool_call_proposal (
+                        proposal_id TEXT PRIMARY KEY,
+                        session_id TEXT NOT NULL,
+                        meeting_id UUID REFERENCES meeting(id) ON DELETE SET NULL,
+                        query_id TEXT,
+                        reason TEXT,
+                        suggested_queries JSONB NOT NULL DEFAULT '[]'::jsonb,
+                        risk TEXT,
+                        approved BOOLEAN,
+                        constraints JSONB,
+                        status TEXT DEFAULT 'pending',
+                        created_at TIMESTAMPTZ DEFAULT NOW(),
+                        updated_at TIMESTAMPTZ DEFAULT NOW()
+                    );
+                    """,
+                    "CREATE INDEX IF NOT EXISTS idx_tool_call_proposal_session ON tool_call_proposal(session_id, created_at DESC);",
+                    """
+                    CREATE TABLE IF NOT EXISTS qna_event_log (
+                        id UUID PRIMARY KEY,
+                        query_id TEXT NOT NULL,
+                        session_id TEXT NOT NULL,
+                        meeting_id UUID REFERENCES meeting(id) ON DELETE SET NULL,
+                        question TEXT NOT NULL,
+                        answer TEXT,
+                        tier_used TEXT,
+                        citations JSONB NOT NULL DEFAULT '[]'::jsonb,
+                        created_at TIMESTAMPTZ DEFAULT NOW()
+                    );
+                    """,
+                    "CREATE INDEX IF NOT EXISTS idx_qna_event_log_session ON qna_event_log(session_id, created_at DESC);",
+                    "CREATE INDEX IF NOT EXISTS idx_qna_event_log_meeting ON qna_event_log(meeting_id, created_at DESC);",
+                ]
+                for stmt in statements:
+                    db.execute(text(stmt))
+                db.commit()
+                self._schema_ensured = True
+            except Exception:
+                db.rollback()
+                logger.warning("realtime_av_schema_ensure_failed", exc_info=True)
+            finally:
+                db.close()
+
+    @staticmethod
+    def _decode_json_value(value: Any) -> Any:
+        if isinstance(value, (dict, list)):
+            return value
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except Exception:
+                return value
+        return value
+
+    def _load_window_segments_from_db(
+        self,
+        session_id: str,
+        start_ts_ms: int,
+        end_ts_ms: int,
+    ) -> Optional[List[TranscriptSeg]]:
+        self._ensure_realtime_schema()
+        db = SessionLocal()
+        try:
+            rows = db.execute(
+                text(
+                    """
+                    SELECT seg_id, speaker, "offset", start_ts_ms, end_ts_ms, text, confidence, record_id
+                    FROM transcript_segment
+                    WHERE session_id = :session_id
+                      AND start_ts_ms BETWEEN :start_ts_ms AND :end_ts_ms
+                    ORDER BY start_ts_ms ASC, seg_id ASC
+                    """
+                ),
+                {
+                    "session_id": session_id,
+                    "start_ts_ms": int(start_ts_ms),
+                    "end_ts_ms": int(end_ts_ms),
+                },
+            ).fetchall()
+        except Exception:
+            db.rollback()
+            logger.debug("realtime_av_window_segments_db_load_failed session_id=%s", session_id, exc_info=True)
+            return None
+        finally:
+            db.close()
+
+        segments: List[TranscriptSeg] = []
+        for row in rows:
+            try:
+                start_value = int(row[3])
+            except (TypeError, ValueError):
+                continue
+            try:
+                end_value = int(row[4]) if row[4] is not None else None
+            except (TypeError, ValueError):
+                end_value = None
+            try:
+                record_id = int(row[7]) if row[7] is not None else 0
+            except (TypeError, ValueError):
+                record_id = 0
+            try:
+                confidence = float(row[6]) if row[6] is not None else 1.0
+            except (TypeError, ValueError):
+                confidence = 1.0
+            text_value = _cleanup_text(row[5])
+            if not text_value:
+                continue
+            segments.append(
+                TranscriptSeg(
+                    seg_id=str(row[0]),
+                    speaker=_cleanup_text(row[1] or "SPEAKER_01") or "SPEAKER_01",
+                    offset=_cleanup_text(row[2] or format_mmss_from_ms(max(0, start_value - start_ts_ms))),
+                    start_ts_ms=start_value,
+                    end_ts_ms=end_value,
+                    text=text_value,
+                    confidence=max(0.0, min(confidence, 1.0)),
+                    record_id=record_id,
+                )
+            )
+        return segments
+
+    def _load_window_frames_from_db(
+        self,
+        session_id: str,
+        start_ts_ms: int,
+        end_ts_ms: int,
+    ) -> Optional[List[CapturedFrameMeta]]:
+        self._ensure_realtime_schema()
+        db = SessionLocal()
+        try:
+            rows = db.execute(
+                text(
+                    """
+                    SELECT frame_id, ts_ms, roi, checksum, uri, diff_score
+                    FROM captured_frame
+                    WHERE session_id = :session_id
+                      AND ts_ms BETWEEN :start_ts_ms AND :end_ts_ms
+                    ORDER BY ts_ms ASC, frame_id ASC
+                    """
+                ),
+                {
+                    "session_id": session_id,
+                    "start_ts_ms": int(start_ts_ms),
+                    "end_ts_ms": int(end_ts_ms),
+                },
+            ).fetchall()
+        except Exception:
+            db.rollback()
+            logger.debug("realtime_av_window_frames_db_load_failed session_id=%s", session_id, exc_info=True)
+            return None
+        finally:
+            db.close()
+
+        frames: List[CapturedFrameMeta] = []
+        for row in rows:
+            try:
+                ts_value = int(row[1])
+            except (TypeError, ValueError):
+                continue
+            roi_value = parse_roi(self._decode_json_value(row[2])) or Roi(x=0, y=0, w=1, h=1)
+            diff_score_raw = self._decode_json_value(row[5])
+            diff_score: Dict[str, float] = {}
+            if isinstance(diff_score_raw, dict):
+                for key in ("hash_dist", "ssim"):
+                    if key in diff_score_raw:
+                        diff_score[key] = _coerce_float(diff_score_raw.get(key), 0.0)
+            frames.append(
+                CapturedFrameMeta(
+                    frame_id=str(row[0]),
+                    ts_ms=ts_value,
+                    roi=roi_value,
+                    checksum=_cleanup_text(row[3]),
+                    uri=str(row[4] or ""),
+                    diff_score=diff_score,
+                )
+            )
+        return frames
+
+    def _load_topic_context_from_db(self, session_id: str, start_ts_ms: int) -> Optional[Dict[str, Any]]:
+        self._ensure_realtime_schema()
+        db = SessionLocal()
+        try:
+            row = db.execute(
+                text(
+                    """
+                    SELECT topics
+                    FROM recap_window
+                    WHERE session_id = :session_id
+                      AND start_ts_ms < :start_ts_ms
+                    ORDER BY start_ts_ms DESC, revision DESC
+                    LIMIT 1
+                    """
+                ),
+                {
+                    "session_id": session_id,
+                    "start_ts_ms": int(start_ts_ms),
+                },
+            ).fetchone()
+        except Exception:
+            db.rollback()
+            logger.debug("realtime_av_topic_context_db_load_failed session_id=%s", session_id, exc_info=True)
+            return None
+        finally:
+            db.close()
+
+        if not row:
+            return None
+        topics = self._decode_json_value(row[0])
+        if not isinstance(topics, list):
+            return None
+        for item in topics:
+            if not isinstance(item, dict):
+                continue
+            topic_id = _cleanup_text(item.get("topic_id") or "")
+            if not topic_id:
+                continue
+            title = _cleanup_text(item.get("title") or topic_id) or topic_id
+            start_t = _coerce_float(item.get("start_t"), 0.0)
+            end_t = _coerce_float(item.get("end_t"), start_t)
+            if end_t < start_t:
+                end_t = start_t
+            return {
+                "topic_id": topic_id,
+                "title": title,
+                "start_t": start_t,
+                "end_t": end_t,
+            }
+        return None
+
+    @staticmethod
+    def _meeting_type_to_session_kind(meeting_type: str) -> str:
+        value = _cleanup_text(meeting_type).lower()
+        if value in {"study_session", "course", "learning", "lesson", "class"}:
+            return "course"
+        return "meeting"
+
+    def _load_meeting_type(self, meeting_id: str) -> Optional[str]:
+        meeting_uuid = ensure_uuid_or_none(meeting_id)
+        if not meeting_uuid:
+            return None
+        db = SessionLocal()
+        try:
+            row = db.execute(
+                text(
+                    """
+                    SELECT meeting_type
+                    FROM meeting
+                    WHERE id = :meeting_id
+                    LIMIT 1
+                    """
+                ),
+                {"meeting_id": meeting_uuid},
+            ).fetchone()
+            if not row:
+                return None
+            return _cleanup_text(row[0]) or None
+        except Exception:
+            db.rollback()
+            logger.debug("realtime_av_load_meeting_type_failed meeting_id=%s", meeting_uuid, exc_info=True)
+            return None
+        finally:
+            db.close()
+
     def ensure_session(self, session_id: str, meeting_id: Optional[str] = None) -> SessionRealtimeAV:
         created = False
+        should_refresh_meeting = False
         with self._lock:
             sess = self._sessions.get(session_id)
             if sess is None:
@@ -288,10 +660,26 @@ class RealtimeAVService:
                 sess.next_window_start_ts_ms = started
                 self._sessions[session_id] = sess
                 created = True
+                should_refresh_meeting = bool(sess.meeting_id)
             elif meeting_id:
+                if sess.meeting_id != meeting_id:
+                    should_refresh_meeting = True
                 sess.meeting_id = meeting_id
+
+        if should_refresh_meeting:
+            meeting_type = self._load_meeting_type(sess.meeting_id)
+            if meeting_type:
+                with self._lock:
+                    sess.meeting_type = meeting_type
+                    sess.session_kind = self._meeting_type_to_session_kind(meeting_type)
         if created:
-            logger.info("realtime_av_session_created session_id=%s meeting_id=%s", session_id, sess.meeting_id)
+            logger.info(
+                "realtime_av_session_created session_id=%s meeting_id=%s meeting_type=%s session_kind=%s",
+                session_id,
+                sess.meeting_id,
+                sess.meeting_type,
+                sess.session_kind,
+            )
         return sess
 
     def get_snapshot(self, session_id: str) -> Optional[SessionSnapshot]:
@@ -910,17 +1298,18 @@ class RealtimeAVService:
                 }
             )
 
+        self._ensure_realtime_schema()
         db = SessionLocal()
         try:
             db.execute(
                 text(
                     """
                     INSERT INTO audio_record (
-                        session_id, meeting_id, record_id, start_ts_ms, end_ts_ms, uri,
+                        id, session_id, meeting_id, record_id, start_ts_ms, end_ts_ms, uri,
                         format, checksum, status, asr_payload, created_at
                     )
                     VALUES (
-                        :session_id, :meeting_id, :record_id, :start_ts_ms, :end_ts_ms, :uri,
+                        :id, :session_id, :meeting_id, :record_id, :start_ts_ms, :end_ts_ms, :uri,
                         :format, :checksum, :status, :asr_payload::jsonb, NOW()
                     )
                     ON CONFLICT (session_id, record_id)
@@ -932,6 +1321,7 @@ class RealtimeAVService:
                     """
                 ),
                 {
+                    "id": str(uuid.uuid4()),
                     "session_id": sess.session_id,
                     "meeting_id": meeting_uuid,
                     "record_id": record.record_id,
@@ -1091,6 +1481,7 @@ class RealtimeAVService:
         segments: List[TranscriptSeg],
         meeting_uuid: Optional[str],
     ) -> None:
+        self._ensure_realtime_schema()
         db = SessionLocal()
         try:
             for seg in segments:
@@ -1218,6 +1609,7 @@ class RealtimeAVService:
     async def _persist_session_roi(self, sess: SessionRealtimeAV) -> None:
         if not sess.roi:
             return
+        self._ensure_realtime_schema()
         db = SessionLocal()
         try:
             db.execute(
@@ -1252,6 +1644,7 @@ class RealtimeAVService:
             db.close()
 
     async def _persist_captured_frame(self, sess: SessionRealtimeAV, frame: CapturedFrameMeta) -> None:
+        self._ensure_realtime_schema()
         db = SessionLocal()
         try:
             db.execute(
@@ -1352,27 +1745,52 @@ class RealtimeAVService:
         sess = self.ensure_session(session_id)
         window_id = f"{session_id}:{start_ts_ms}:{end_ts_ms}"
 
+        db_segments = self._load_window_segments_from_db(session_id, start_ts_ms, end_ts_ms)
+        db_frames = self._load_window_frames_from_db(session_id, start_ts_ms, end_ts_ms)
+        used_db = db_segments is not None and db_frames is not None
+
+        if used_db:
+            segments = db_segments or []
+            frames = db_frames or []
+        else:
+            with self._lock:
+                segments = [
+                    seg
+                    for seg in sess.transcript_segments.values()
+                    if start_ts_ms <= seg.start_ts_ms <= end_ts_ms
+                ]
+                segments.sort(key=lambda item: (item.start_ts_ms, item.seg_id))
+                frames = [
+                    frame
+                    for frame in sess.captured_frames.values()
+                    if start_ts_ms <= frame.ts_ms <= end_ts_ms
+                ]
+                frames.sort(key=lambda item: (item.ts_ms, item.frame_id))
+
+        new_seg_ids = {seg.seg_id for seg in segments}
+        new_frame_ids = {frame.frame_id for frame in frames}
         with self._lock:
-            segments = [
-                seg
-                for seg in sess.transcript_segments.values()
-                if start_ts_ms <= seg.start_ts_ms <= end_ts_ms
-            ]
-            segments.sort(key=lambda item: (item.start_ts_ms, item.seg_id))
-            frames = [
-                frame
-                for frame in sess.captured_frames.values()
-                if start_ts_ms <= frame.ts_ms <= end_ts_ms
-            ]
-            frames.sort(key=lambda item: (item.ts_ms, item.frame_id))
-            new_seg_ids = {seg.seg_id for seg in segments}
-            new_frame_ids = {frame.frame_id for frame in frames}
             prev_meta = sess.windows.get(window_id)
             if prev_meta and prev_meta.segment_ids == new_seg_ids and prev_meta.frame_ids == new_frame_ids:
                 return
             revision = (prev_meta.revision + 1) if prev_meta else 1
 
-        payload = self._build_window_payload(sess, window_id, start_ts_ms, end_ts_ms, revision, segments, frames)
+        topic_context = self._load_topic_context_from_db(session_id, start_ts_ms) or {
+            "topic_id": "T0",
+            "title": "General",
+            "start_t": 0.0,
+            "end_t": 0.0,
+        }
+        payload = self._build_window_payload(
+            sess,
+            window_id,
+            start_ts_ms,
+            end_ts_ms,
+            revision,
+            segments,
+            frames,
+            topic_context=topic_context,
+        )
 
         with self._lock:
             sess.windows[window_id] = WindowMeta(
@@ -1393,13 +1811,14 @@ class RealtimeAVService:
             },
         )
         logger.info(
-            "realtime_av_window_emitted session_id=%s window_id=%s revision=%s reason=%s segments=%s frames=%s",
+            "realtime_av_window_emitted session_id=%s window_id=%s revision=%s reason=%s segments=%s frames=%s source=%s",
             session_id,
             window_id,
             revision,
             reason,
             len(segments),
             len(frames),
+            "db" if used_db else "memory_fallback",
         )
 
     def _build_window_payload(
@@ -1411,68 +1830,262 @@ class RealtimeAVService:
         revision: int,
         segments: List[TranscriptSeg],
         frames: List[CapturedFrameMeta],
+        topic_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
+        window_start_sec = max(0.0, (start_ts_ms - sess.started_ts_ms) / 1000.0)
+        window_end_sec = max(0.0, (end_ts_ms - sess.started_ts_ms) / 1000.0)
+        session_kind = "course" if _cleanup_text(sess.session_kind).lower() == "course" else "meeting"
         transcript_excerpt = "\n".join(
-            f"[{seg.speaker} {format_mmss_from_ms(max(0, seg.start_ts_ms - sess.started_ts_ms))}] {seg.text}"
+            f"{seg.speaker}: {_cleanup_text(seg.text)}"
             for seg in segments
         )
 
+        current_topic_id = _cleanup_text((topic_context or {}).get("topic_id") or "T0") or "T0"
+        current_topic_title = _cleanup_text((topic_context or {}).get("title") or current_topic_id or "General")
+        if not current_topic_title:
+            current_topic_title = "General"
         meta = {
-            "current_topic_id": "T0",
-            "window_start": max(0.0, (start_ts_ms - sess.started_ts_ms) / 1000.0),
-            "window_end": max(0.0, (end_ts_ms - sess.started_ts_ms) / 1000.0),
+            "current_topic_id": current_topic_id,
+            "current_topic": {
+                "topic_id": current_topic_id,
+                "title": current_topic_title,
+                "start_t": _coerce_float((topic_context or {}).get("start_t"), window_start_sec),
+                "end_t": _coerce_float((topic_context or {}).get("end_t"), window_end_sec),
+            },
+            "window_start": window_start_sec,
+            "window_end": window_end_sec,
+            "session_kind": session_kind,
         }
         summary = summarize_and_classify(transcript_excerpt, meta=meta)
-        recap_text = _cleanup_text(summary.get("recap"))
-        if not recap_text:
-            recap_text = "No transcript available for this window."
 
-        recap_lines = [line.strip(" -") for line in re.split(r"[.\n]+", recap_text) if line.strip(" -")]
+        recap_lines: List[str] = []
+        summary_recap_lines = summary.get("recap_lines")
+        if isinstance(summary_recap_lines, list):
+            for line in summary_recap_lines:
+                clean = _cleanup_text(line)
+                if clean:
+                    recap_lines.append(clean)
         if not recap_lines:
-            recap_lines = [recap_text]
+            recap_text = _cleanup_text(summary.get("recap"))
+            if recap_text:
+                recap_lines = [line.strip(" -") for line in re.split(r"[.\n]+", recap_text) if line.strip(" -")]
+        if not recap_lines:
+            recap_lines = ["No transcript available for this window."]
         recap_lines = recap_lines[:6]
 
         base_citations = self._build_citation_bundle(segments, frames)
+
+        topic_payload = summary.get("topic") if isinstance(summary.get("topic"), dict) else {}
+        topic_id = _cleanup_text(topic_payload.get("topic_id") or current_topic_id) or "T0"
+        topic_title = _cleanup_text(topic_payload.get("title") or current_topic_title or topic_id) or topic_id
+        topic_start = _coerce_float(topic_payload.get("start_t"), window_start_sec)
+        topic_end = _coerce_float(topic_payload.get("end_t"), window_end_sec)
+        topic_start = min(max(topic_start, window_start_sec), window_end_sec)
+        topic_end = min(max(topic_end, topic_start), window_end_sec)
+        canonical_topic = {
+            "new_topic": bool(topic_payload.get("new_topic", False)),
+            "topic_id": topic_id,
+            "title": topic_title,
+            "start_t": topic_start,
+            "end_t": topic_end,
+        }
 
         recap_items = [
             {
                 "id": f"{window_id}:recap:{idx}",
                 "text": line,
+                "topic_id": topic_id,
+                "topic": topic_title,
                 "citations": base_citations[:2] if base_citations else [],
             }
             for idx, line in enumerate(recap_lines)
         ]
 
-        topic_payload = summary.get("topic") if isinstance(summary.get("topic"), dict) else {}
-        topic_title = _cleanup_text(topic_payload.get("title") or "General")
-        topics = [
-            {
-                "topic_id": _cleanup_text(topic_payload.get("topic_id") or "T0"),
-                "title": topic_title,
-                "description": recap_lines[0] if recap_lines else "Summary topic",
-                "citations": base_citations[:2] if base_citations else [],
-            }
-        ]
+        topics: List[Dict[str, Any]] = []
+        summary_topics = summary.get("topics") if isinstance(summary.get("topics"), list) else []
+        for item in summary_topics:
+            if not isinstance(item, dict):
+                continue
+            t_id = _cleanup_text(item.get("topic_id")) or topic_id
+            t_title = _cleanup_text(item.get("title")) or topic_title
+            t_desc = _cleanup_text(item.get("description")) or recap_lines[0]
+            t_start = _coerce_float(item.get("start_t"), topic_start)
+            t_end = _coerce_float(item.get("end_t"), topic_end)
+            t_start = min(max(t_start, window_start_sec), window_end_sec)
+            t_end = min(max(t_end, t_start), window_end_sec)
+            topics.append(
+                {
+                    "topic_id": t_id,
+                    "title": t_title,
+                    "description": t_desc,
+                    "start_t": t_start,
+                    "end_t": t_end,
+                    "citations": base_citations[:2] if base_citations else [],
+                }
+            )
+        if not topics:
+            topics = [
+                {
+                    "topic_id": topic_id,
+                    "title": topic_title,
+                    "description": recap_lines[0] if recap_lines else "Summary topic",
+                    "start_t": topic_start,
+                    "end_t": topic_end,
+                    "citations": base_citations[:2] if base_citations else [],
+                }
+            ]
+        topics = topics[:5]
 
-        term_candidates = self._extract_terms(segments)
-        cheatsheet = [
-            {
-                "term": term,
-                "definition": f"Khái niệm được nhắc trong cửa sổ {format_mmss_from_ms(max(0, start_ts_ms - sess.started_ts_ms))}-{format_mmss_from_ms(max(0, end_ts_ms - sess.started_ts_ms))}.",
-                "citations": base_citations[:1] if base_citations else [],
-            }
-            for term in term_candidates[:5]
-        ]
+        cheatsheet: List[Dict[str, Any]] = []
+        summary_cheatsheet = summary.get("cheatsheet") if isinstance(summary.get("cheatsheet"), list) else []
+        for item in summary_cheatsheet:
+            if not isinstance(item, dict):
+                continue
+            term = _cleanup_text(item.get("term"))
+            definition = _cleanup_text(item.get("definition"))
+            if not term or not definition:
+                continue
+            cheatsheet.append(
+                {
+                    "term": term,
+                    "definition": definition,
+                    "citations": base_citations[:1] if base_citations else [],
+                }
+            )
+        if not cheatsheet:
+            term_candidates = self._extract_terms(segments)
+            cheatsheet = [
+                {
+                    "term": term,
+                    "definition": f"Mentioned concept in window {format_mmss_from_ms(max(0, start_ts_ms - sess.started_ts_ms))}-{format_mmss_from_ms(max(0, end_ts_ms - sess.started_ts_ms))}.",
+                    "citations": base_citations[:1] if base_citations else [],
+                }
+                for term in term_candidates[:5]
+            ]
+
+        adr_raw = summary.get("adr") if isinstance(summary.get("adr"), dict) else {}
+        actions: List[Dict[str, Any]] = []
+        decisions: List[Dict[str, Any]] = []
+        risks: List[Dict[str, Any]] = []
+        for item in adr_raw.get("actions", []) if isinstance(adr_raw.get("actions"), list) else []:
+            if not isinstance(item, dict):
+                continue
+            task = _cleanup_text(item.get("task") or item.get("description"))
+            if not task:
+                continue
+            actions.append(
+                {
+                    "id": f"{window_id}:a:{len(actions)}",
+                    "task": task,
+                    "owner": _cleanup_text(item.get("owner")),
+                    "due_date": _cleanup_text(item.get("due_date") or item.get("deadline")),
+                    "priority": _cleanup_text(item.get("priority")) or "medium",
+                    "source_text": _cleanup_text(item.get("source_text")),
+                }
+            )
+        for item in adr_raw.get("decisions", []) if isinstance(adr_raw.get("decisions"), list) else []:
+            if not isinstance(item, dict):
+                continue
+            title = _cleanup_text(item.get("title") or item.get("description"))
+            if not title:
+                continue
+            decisions.append(
+                {
+                    "id": f"{window_id}:d:{len(decisions)}",
+                    "title": title,
+                    "rationale": _cleanup_text(item.get("rationale")),
+                    "impact": _cleanup_text(item.get("impact")),
+                    "source_text": _cleanup_text(item.get("source_text")),
+                }
+            )
+        for item in adr_raw.get("risks", []) if isinstance(adr_raw.get("risks"), list) else []:
+            if not isinstance(item, dict):
+                continue
+            desc = _cleanup_text(item.get("desc") or item.get("description"))
+            if not desc:
+                continue
+            severity = _cleanup_text(item.get("severity")).lower() or "medium"
+            if severity not in {"low", "medium", "high"}:
+                severity = "medium"
+            risks.append(
+                {
+                    "id": f"{window_id}:r:{len(risks)}",
+                    "desc": desc,
+                    "severity": severity,
+                    "mitigation": _cleanup_text(item.get("mitigation")),
+                    "owner": _cleanup_text(item.get("owner")),
+                    "source_text": _cleanup_text(item.get("source_text")),
+                }
+            )
+
+        course_highlights: List[Dict[str, Any]] = []
+        summary_highlights = summary.get("course_highlights") if isinstance(summary.get("course_highlights"), list) else []
+        for item in summary_highlights:
+            if not isinstance(item, dict):
+                continue
+            kind = _cleanup_text(item.get("kind")).lower() or "concept"
+            if kind not in {"concept", "formula", "example", "note"}:
+                kind = "concept"
+            title = _cleanup_text(item.get("title"))
+            bullet = _cleanup_text(item.get("bullet"))
+            formula = _cleanup_text(item.get("formula"))
+            if not title and not bullet:
+                continue
+            course_highlights.append(
+                {
+                    "id": f"{window_id}:h:{len(course_highlights)}",
+                    "kind": kind,
+                    "title": title or bullet,
+                    "bullet": bullet or title,
+                    "formula": formula,
+                    "citations": base_citations[:2] if base_citations else [],
+                }
+            )
+
+        if session_kind == "course":
+            actions = []
+            decisions = []
+            risks = []
+            if not course_highlights:
+                for item in cheatsheet[:5]:
+                    course_highlights.append(
+                        {
+                            "id": f"{window_id}:h:{len(course_highlights)}",
+                            "kind": "concept",
+                            "title": _cleanup_text(item.get("term")),
+                            "bullet": _cleanup_text(item.get("definition")),
+                            "formula": "",
+                            "citations": item.get("citations", []),
+                        }
+                    )
+        else:
+            course_highlights = []
+
+        model_name = (
+            _cleanup_text(summary.get("model_name"))
+            or _cleanup_text(settings.gemini_model)
+            or _cleanup_text(settings.groq_model)
+            or "LLM"
+        )
 
         return {
             "window_id": window_id,
             "start_ts_ms": start_ts_ms,
             "end_ts_ms": end_ts_ms,
             "revision": revision,
+            "session_kind": session_kind,
+            "meeting_type": _cleanup_text(sess.meeting_type) or "project_meeting",
+            "model_name": model_name,
             "recap": recap_items,
+            "topic": canonical_topic,
             "topics": topics,
             "cheatsheet": cheatsheet,
             "citations": base_citations,
+            "actions": actions,
+            "decisions": decisions,
+            "risks": risks,
+            "course_highlights": course_highlights,
+            "intent_payload": summary.get("intent") if isinstance(summary.get("intent"), dict) else {"label": "NO_INTENT", "slots": {}},
         }
 
     def _build_citation_bundle(self, segments: List[TranscriptSeg], frames: List[CapturedFrameMeta]) -> List[Dict[str, Any]]:
@@ -1526,23 +2139,25 @@ class RealtimeAVService:
         return [term for term, _ in sorted(freq.items(), key=lambda item: (-item[1], item[0]))[:10]]
 
     async def _persist_window_payload(self, sess: SessionRealtimeAV, payload: Dict[str, Any]) -> None:
+        self._ensure_realtime_schema()
         db = SessionLocal()
         try:
             db.execute(
                 text(
                     """
                     INSERT INTO recap_window (
-                        window_id, session_id, meeting_id, start_ts_ms, end_ts_ms, revision,
+                        id, window_id, session_id, meeting_id, start_ts_ms, end_ts_ms, revision,
                         recap, topics, cheatsheet, citations, status, created_at, updated_at
                     )
                     VALUES (
-                        :window_id, :session_id, :meeting_id, :start_ts_ms, :end_ts_ms, :revision,
+                        :id, :window_id, :session_id, :meeting_id, :start_ts_ms, :end_ts_ms, :revision,
                         :recap::jsonb, :topics::jsonb, :cheatsheet::jsonb, :citations::jsonb, 'ready', NOW(), NOW()
                     )
                     ON CONFLICT (window_id, revision) DO NOTHING
                     """
                 ),
                 {
+                    "id": str(uuid.uuid4()),
                     "window_id": payload["window_id"],
                     "session_id": sess.session_id,
                     "meeting_id": ensure_uuid_or_none(sess.meeting_id),
@@ -1582,6 +2197,7 @@ class RealtimeAVService:
             db.close()
 
     async def _persist_tool_call_proposal(self, sess: SessionRealtimeAV, proposal_id: str, query_id: str, query: str) -> None:
+        self._ensure_realtime_schema()
         db = SessionLocal()
         try:
             db.execute(
@@ -1622,6 +2238,7 @@ class RealtimeAVService:
         approved: bool,
         constraints: Dict[str, Any],
     ) -> None:
+        self._ensure_realtime_schema()
         db = SessionLocal()
         try:
             db.execute(
@@ -1658,20 +2275,22 @@ class RealtimeAVService:
         tier_used: str,
         citations: List[Dict[str, Any]],
     ) -> None:
+        self._ensure_realtime_schema()
         db = SessionLocal()
         try:
             db.execute(
                 text(
                     """
                     INSERT INTO qna_event_log (
-                        query_id, session_id, meeting_id, question, answer, tier_used, citations, created_at
+                        id, query_id, session_id, meeting_id, question, answer, tier_used, citations, created_at
                     )
                     VALUES (
-                        :query_id, :session_id, :meeting_id, :question, :answer, :tier_used, :citations::jsonb, NOW()
+                        :id, :query_id, :session_id, :meeting_id, :question, :answer, :tier_used, :citations::jsonb, NOW()
                     )
                     """
                 ),
                 {
+                    "id": str(uuid.uuid4()),
                     "query_id": query_id,
                     "session_id": sess.session_id,
                     "meeting_id": ensure_uuid_or_none(sess.meeting_id),
@@ -1818,3 +2437,4 @@ class RealtimeAVService:
 
 
 realtime_av_service = RealtimeAVService()
+

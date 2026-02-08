@@ -108,11 +108,11 @@ Main app wiring:
 
 ## 3.4 Merge lane (window 2 phut)
 1. Trigger theo session clock, stride = `window_ms - overlap_ms`.
-2. Gom transcript segments theo `start_ts_ms` trong window.
-3. Gom captured frames theo `ts_ms` trong window.
+2. Query transcript segments tu DB (`transcript_segment`) theo `start_ts_ms` trong window.
+3. Query captured frames tu DB (`captured_frame`) theo `ts_ms` trong window.
 4. Tao payload:
    - `recap` (bullet list)
-   - `topics`
+   - `topics` + `topic` hien hanh (de fill topic placeholder tren recap UI)
    - `cheatsheet`
    - `citations` (seg_id/frame_id + ts_ms)
 5. Persist `recap_window`.

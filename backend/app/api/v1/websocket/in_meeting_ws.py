@@ -395,16 +395,86 @@ def _build_transcript_event_compat_from_record(
 
 def _build_state_event_compat_from_window(event: Dict[str, Any]) -> Dict[str, Any]:
     payload = event.get("payload") or {}
+    session_kind = str(payload.get("session_kind") or "meeting").strip().lower()
+    if session_kind not in {"meeting", "course"}:
+        session_kind = "meeting"
+    model_name = str(payload.get("model_name") or "").strip()
     recap_items = payload.get("recap") or []
     recap_text = " ".join(
         str(item.get("text") or "").strip()
         for item in recap_items
         if isinstance(item, dict) and str(item.get("text") or "").strip()
     ).strip()
+
     topics = payload.get("topics") or []
-    first_topic = topics[0] if topics and isinstance(topics[0], dict) else {}
-    topic_id = str(first_topic.get("topic_id") or "T0")
-    topic_title = str(first_topic.get("title") or topic_id)
+    topic_segments: List[Dict[str, Any]] = []
+    for topic in topics:
+        if not isinstance(topic, dict):
+            continue
+        topic_id_value = str(topic.get("topic_id") or "").strip()
+        if not topic_id_value:
+            continue
+        topic_title_value = str(topic.get("title") or topic_id_value).strip() or topic_id_value
+        try:
+            start_t = float(topic.get("start_t", 0.0))
+        except (TypeError, ValueError):
+            start_t = 0.0
+        try:
+            end_t = float(topic.get("end_t", start_t))
+        except (TypeError, ValueError):
+            end_t = start_t
+        if end_t < start_t:
+            end_t = start_t
+        topic_segments.append(
+            {
+                "topic_id": topic_id_value,
+                "title": topic_title_value,
+                "start_t": start_t,
+                "end_t": end_t,
+            }
+        )
+
+    primary_topic = payload.get("topic") if isinstance(payload.get("topic"), dict) else None
+    if primary_topic:
+        topic_id = str(primary_topic.get("topic_id") or "").strip() or "T0"
+        topic_title = str(primary_topic.get("title") or topic_id).strip() or topic_id
+        try:
+            topic_start = float(primary_topic.get("start_t", 0.0))
+        except (TypeError, ValueError):
+            topic_start = 0.0
+        try:
+            topic_end = float(primary_topic.get("end_t", topic_start))
+        except (TypeError, ValueError):
+            topic_end = topic_start
+        if topic_end < topic_start:
+            topic_end = topic_start
+    elif topic_segments:
+        topic_id = str(topic_segments[0].get("topic_id") or "T0")
+        topic_title = str(topic_segments[0].get("title") or topic_id)
+        topic_start = float(topic_segments[0].get("start_t") or 0.0)
+        topic_end = float(topic_segments[0].get("end_t") or topic_start)
+    else:
+        topic_id = "T0"
+        topic_title = topic_id
+        topic_start = 0.0
+        topic_end = 0.0
+
+    if not topic_segments:
+        topic_segments = [
+            {
+                "topic_id": topic_id,
+                "title": topic_title,
+                "start_t": topic_start,
+                "end_t": topic_end,
+            }
+        ]
+
+    actions = payload.get("actions") if isinstance(payload.get("actions"), list) else []
+    decisions = payload.get("decisions") if isinstance(payload.get("decisions"), list) else []
+    risks = payload.get("risks") if isinstance(payload.get("risks"), list) else []
+    course_highlights = payload.get("course_highlights") if isinstance(payload.get("course_highlights"), list) else []
+    cheatsheet = payload.get("cheatsheet") if isinstance(payload.get("cheatsheet"), list) else []
+
     return {
         "event": "state",
         "payload": {
@@ -412,19 +482,16 @@ def _build_state_event_compat_from_window(event: Dict[str, Any]) -> Dict[str, An
             "intent": "tick",
             "live_recap": recap_text,
             "recap": recap_text,
+            "session_kind": session_kind,
+            "model_name": model_name,
             "current_topic_id": topic_id,
-            "topic": {"topic_id": topic_id, "title": topic_title},
-            "topic_segments": [
-                {
-                    "topic_id": topic_id,
-                    "title": topic_title,
-                    "start_t": 0.0,
-                    "end_t": 0.0,
-                }
-            ],
-            "actions": [],
-            "decisions": [],
-            "risks": [],
+            "topic": {"topic_id": topic_id, "title": topic_title, "start_t": topic_start, "end_t": topic_end},
+            "topic_segments": topic_segments,
+            "actions": actions,
+            "decisions": decisions,
+            "risks": risks,
+            "course_highlights": course_highlights,
+            "cheatsheet": cheatsheet,
             "debug_info": {
                 "window_id": payload.get("window_id"),
                 "revision": payload.get("revision"),
