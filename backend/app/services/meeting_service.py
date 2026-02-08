@@ -1,6 +1,8 @@
 from datetime import datetime
 from typing import Optional, List, Tuple
 from uuid import uuid4
+import logging
+from pathlib import Path
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.schemas.meeting import (
@@ -10,6 +12,141 @@ from app.schemas.meeting import (
     MeetingWithParticipants,
     Participant
 )
+from app.services.storage_client import delete_object, is_storage_configured
+
+
+logger = logging.getLogger(__name__)
+
+
+def _table_exists(db: Session, table_name: str) -> bool:
+    try:
+        result = db.execute(
+            text("SELECT to_regclass(:table_name)"),
+            {"table_name": f"public.{table_name}"},
+        ).scalar()
+        return bool(result)
+    except Exception:
+        return False
+
+
+def _table_has_column(db: Session, table_name: str, column_name: str) -> bool:
+    try:
+        result = db.execute(
+            text(
+                """
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = :table_name
+                  AND column_name = :column_name
+                LIMIT 1
+                """
+            ),
+            {"table_name": table_name, "column_name": column_name},
+        ).fetchone()
+        return bool(result)
+    except Exception:
+        return False
+
+
+def _collect_assets_by_scope(
+    db: Session,
+    table_name: str,
+    scope_column: str,
+    scope_value: str,
+) -> list[dict]:
+    if not _table_exists(db, table_name) or not _table_has_column(db, table_name, scope_column):
+        return []
+    fields: list[str] = []
+    for col in ("storage_key", "file_url", "provider"):
+        if _table_has_column(db, table_name, col):
+            fields.append(col)
+    if not fields:
+        return []
+    rows = db.execute(
+        text(f"SELECT {', '.join(fields)} FROM {table_name} WHERE {scope_column} = :scope_value"),
+        {"scope_value": scope_value},
+    ).mappings().all()
+    assets: list[dict] = []
+    for row in rows:
+        assets.append(
+            {
+                "storage_key": row.get("storage_key"),
+                "file_url": row.get("file_url"),
+                "provider": row.get("provider"),
+            }
+        )
+    return assets
+
+
+def _delete_rows_by_scope(db: Session, table_name: str, scope_column: str, scope_value: str) -> None:
+    if not _table_exists(db, table_name) or not _table_has_column(db, table_name, scope_column):
+        return
+    db.execute(
+        text(f"DELETE FROM {table_name} WHERE {scope_column} = :scope_value"),
+        {"scope_value": scope_value},
+    )
+
+
+def _remove_mock_docs_for_meeting(meeting_id: str) -> None:
+    try:
+        from app.services import knowledge_service
+        keys = [
+            key
+            for key, doc in getattr(knowledge_service, "_mock_knowledge_docs", {}).items()
+            if str(getattr(doc, "meeting_id", "")) == str(meeting_id)
+        ]
+        for key in keys:
+            knowledge_service._mock_knowledge_docs.pop(key, None)
+    except Exception:
+        pass
+    try:
+        from app.services import document_service
+        keys = [
+            key
+            for key, doc in getattr(document_service, "_mock_documents", {}).items()
+            if str(getattr(doc, "meeting_id", "")) == str(meeting_id)
+        ]
+        for key in keys:
+            document_service._mock_documents.pop(key, None)
+    except Exception:
+        pass
+
+
+def _delete_file_assets(assets: list[dict]) -> None:
+    backend_root = Path(__file__).resolve().parents[2]
+    seen: set[tuple[str, str]] = set()
+    for asset in assets:
+        storage_key = str(asset.get("storage_key") or "").strip()
+        file_url = str(asset.get("file_url") or "").strip()
+        provider = str(asset.get("provider") or "").strip().lower()
+
+        key = (storage_key, file_url)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        if storage_key and (provider == "supabase" or is_storage_configured()):
+            try:
+                delete_object(storage_key)
+            except Exception as exc:
+                logger.warning("Failed to delete storage object %s: %s", storage_key, exc)
+
+        if file_url and file_url.startswith("/files/"):
+            relative = file_url[len("/files/"):].lstrip("/")
+            candidates = [
+                backend_root / "uploaded_files" / relative,
+                backend_root / file_url.lstrip("/"),
+                Path("/app/uploaded_files") / relative,
+                Path("/app") / file_url.lstrip("/"),
+            ]
+            for path in candidates:
+                try:
+                    if path.exists() and path.is_file():
+                        path.unlink()
+                        break
+                except Exception as exc:
+                    logger.warning("Failed to delete local file %s: %s", path, exc)
 
 
 def list_meetings(
@@ -322,11 +459,112 @@ def update_meeting(db: Session, meeting_id: str, payload: MeetingUpdate) -> Opti
 
 
 def delete_meeting(db: Session, meeting_id: str) -> bool:
-    """Delete a meeting"""
-    query = text("DELETE FROM meeting WHERE id = :meeting_id RETURNING id")
-    result = db.execute(query, {'meeting_id': meeting_id})
-    db.commit()
-    return result.fetchone() is not None
+    """
+    Delete meeting and all related data/history.
+    Includes documents, knowledge chunks, chat history, summaries, realtime AV logs.
+    """
+    assets: list[dict] = []
+    try:
+        assets.extend(_collect_assets_by_scope(db, "meeting_recording", "meeting_id", meeting_id))
+        assets.extend(_collect_assets_by_scope(db, "knowledge_document", "meeting_id", meeting_id))
+        assets.extend(_collect_assets_by_scope(db, "document", "meeting_id", meeting_id))
+        assets.extend(_collect_assets_by_scope(db, "documents", "meeting_id", meeting_id))
+    except Exception as exc:
+        logger.warning("Failed to collect file assets before meeting delete %s: %s", meeting_id, exc)
+
+    try:
+        # Chat history by legacy schema (chat_message has meeting_id).
+        _delete_rows_by_scope(db, "chat_message", "meeting_id", meeting_id)
+
+        # Chat history by current schema (chat_message -> chat_session).
+        session_ids: list[str] = []
+        if _table_exists(db, "chat_session") and _table_has_column(db, "chat_session", "meeting_id"):
+            rows = db.execute(
+                text("SELECT id::text FROM chat_session WHERE meeting_id = :meeting_id"),
+                {"meeting_id": meeting_id},
+            ).fetchall()
+            session_ids = [row[0] for row in rows if row and row[0]]
+        if session_ids and _table_exists(db, "chat_message") and _table_has_column(db, "chat_message", "session_id"):
+            for session_id in session_ids:
+                db.execute(
+                    text("DELETE FROM chat_message WHERE session_id = :session_id"),
+                    {"session_id": session_id},
+                )
+
+        # Tables with strong meeting ownership.
+        for table_name in [
+            "agenda_item",
+            "tool_suggestion",
+            "ai_event_log",
+            "adr_history",
+            "risk_item",
+            "decision_item",
+            "action_item",
+            "topic_segment",
+            "transcript_chunk",
+            "note_item",
+            "quiz_item",
+            "meeting_summary",
+            "meeting_minutes",
+            "ask_ai_query",
+            "visual_object_event",
+            "visual_event",
+            "context_window",
+            "recap_segment",
+            "qna_event_log",
+            "tool_call_proposal",
+            "recap_window",
+            "captured_frame",
+            "transcript_segment",
+            "audio_record",
+            "session_roi",
+            "meeting_recording",
+            "meeting_participant",
+            "chat_session",
+        ]:
+            _delete_rows_by_scope(db, table_name, "meeting_id", meeting_id)
+
+        # Delete chunks linked to docs under this meeting (safety for legacy schema).
+        if (
+            _table_exists(db, "knowledge_chunk")
+            and _table_exists(db, "knowledge_document")
+            and _table_has_column(db, "knowledge_chunk", "document_id")
+            and _table_has_column(db, "knowledge_document", "meeting_id")
+        ):
+            db.execute(
+                text(
+                    """
+                    DELETE FROM knowledge_chunk kc
+                    USING knowledge_document kd
+                    WHERE kc.document_id = kd.id
+                      AND kd.meeting_id = :meeting_id
+                    """
+                ),
+                {"meeting_id": meeting_id},
+            )
+
+        # Delete meeting-scoped docs metadata.
+        _delete_rows_by_scope(db, "knowledge_document", "meeting_id", meeting_id)
+        _delete_rows_by_scope(db, "document", "meeting_id", meeting_id)
+        _delete_rows_by_scope(db, "documents", "meeting_id", meeting_id)
+
+        result = db.execute(
+            text("DELETE FROM meeting WHERE id = :meeting_id RETURNING id"),
+            {'meeting_id': meeting_id},
+        )
+        row = result.fetchone()
+        if not row:
+            db.rollback()
+            return False
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.error("Failed to delete meeting %s: %s", meeting_id, exc, exc_info=True)
+        return False
+
+    _delete_file_assets(assets)
+    _remove_mock_docs_for_meeting(meeting_id)
+    return True
 
 
 def add_participant(db: Session, meeting_id: str, user_id: str, role: str = 'attendee') -> Optional[Meeting]:

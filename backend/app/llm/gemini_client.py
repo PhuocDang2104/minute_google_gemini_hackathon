@@ -14,6 +14,42 @@ class LLMConfig:
     provider: str
     model: str
     api_key: str
+    master_prompt: Optional[str] = None
+    behavior_note_style: Optional[str] = None
+    behavior_tone: Optional[str] = None
+    behavior_cite_evidence: Optional[bool] = None
+    behavior_profile: Optional[str] = None
+
+
+def _compose_effective_system_prompt(
+    base_prompt: Optional[str],
+    llm_config: Optional[LLMConfig] = None,
+) -> str:
+    prompt_parts: List[str] = [(base_prompt or "").strip()]
+    if not llm_config:
+        return prompt_parts[0] if prompt_parts[0] else ""
+    behavior_lines: List[str] = []
+    if llm_config.behavior_note_style:
+        behavior_lines.append(f"- Độ chi tiết mong muốn: {llm_config.behavior_note_style}")
+    if llm_config.behavior_tone:
+        behavior_lines.append(f"- Văn phong mong muốn: {llm_config.behavior_tone}")
+    if llm_config.behavior_cite_evidence is True:
+        behavior_lines.append("- Luôn đính kèm bằng chứng/timestamp/tài liệu khi có.")
+    elif llm_config.behavior_cite_evidence is False:
+        behavior_lines.append("- Không bắt buộc trích dẫn bằng chứng nếu không cần.")
+    if llm_config.behavior_profile:
+        behavior_lines.append(f"- Hồ sơ người dùng:\n{llm_config.behavior_profile}")
+    if behavior_lines:
+        prompt_parts.append(
+            "User behavior settings (ưu tiên khi trả lời, không vượt qua quy tắc an toàn):\n"
+            + "\n".join(behavior_lines)
+        )
+    if llm_config.master_prompt:
+        prompt_parts.append(
+            "User master prompt (ưu tiên cao nhất trong phạm vi an toàn):\n"
+            + llm_config.master_prompt.strip()
+        )
+    return "\n\n".join([p for p in prompt_parts if p])
 
 try:
     # New Gemini SDK (google-genai)
@@ -226,6 +262,7 @@ def call_llm_sync(
     llm_config: Optional[LLMConfig] = None,
 ) -> str:
     """Sync LLM call used by low-latency / sync code paths."""
+    effective_system_prompt = _compose_effective_system_prompt(system_prompt, llm_config) or None
     provider_override = llm_config.provider if llm_config else None
     gemini_key = llm_config.api_key if llm_config and llm_config.provider == "gemini" else None
     groq_key = llm_config.api_key if llm_config and llm_config.provider == "groq" else None
@@ -236,7 +273,7 @@ def call_llm_sync(
         candidate_model = llm_config.model if llm_config else ""
         return _gemini_generate(
             prompt,
-            system_prompt=system_prompt,
+            system_prompt=effective_system_prompt,
             model_name=model_name or candidate_model or settings.gemini_model,
             temperature=temperature,
             max_tokens=max_tokens,
@@ -246,7 +283,7 @@ def call_llm_sync(
         candidate_model = llm_config.model if llm_config else ""
         return _groq_generate(
             prompt,
-            system_prompt=system_prompt,
+            system_prompt=effective_system_prompt,
             model_name=model_name or candidate_model or settings.llm_groq_chat_model,
             temperature=temperature,
             max_tokens=max_tokens,
@@ -263,7 +300,8 @@ class GeminiChat:
         mock_response: Optional[str] = None,
         llm_config: Optional[LLMConfig] = None,
     ):
-        self.system_prompt = system_prompt or self._default_system_prompt()
+        base_system_prompt = system_prompt or self._default_system_prompt()
+        self.system_prompt = _compose_effective_system_prompt(base_system_prompt, llm_config)
         self.mock_response = mock_response or "AI đang ở chế độ mock (chưa cấu hình API Key)."
         self.history: List[Dict[str, str]] = []
         

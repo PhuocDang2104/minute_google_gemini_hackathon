@@ -1,6 +1,8 @@
 from datetime import datetime
 from typing import Optional, List, Tuple
 from uuid import uuid4
+import logging
+from pathlib import Path
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -14,11 +16,125 @@ from app.schemas.project import (
     ProjectMemberList,
     ProjectMemberCreate,
 )
+from app.services.storage_client import delete_object, is_storage_configured
+
+
+logger = logging.getLogger(__name__)
 
 
 def _table_exists(db: Session, table_name: str) -> bool:
     res = db.execute(text("SELECT to_regclass(:t)"), {"t": f"public.{table_name}"}).scalar()
     return res is not None
+
+
+def _table_has_column(db: Session, table_name: str, column_name: str) -> bool:
+    try:
+        result = db.execute(
+            text(
+                """
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = :table_name
+                  AND column_name = :column_name
+                LIMIT 1
+                """
+            ),
+            {"table_name": table_name, "column_name": column_name},
+        ).fetchone()
+        return bool(result)
+    except Exception:
+        return False
+
+
+def _collect_assets_by_scope(db: Session, table_name: str, scope_column: str, scope_value: str) -> list[dict]:
+    if not _table_exists(db, table_name) or not _table_has_column(db, table_name, scope_column):
+        return []
+    fields: list[str] = []
+    for col in ("storage_key", "file_url", "provider"):
+        if _table_has_column(db, table_name, col):
+            fields.append(col)
+    if not fields:
+        return []
+    rows = db.execute(
+        text(f"SELECT {', '.join(fields)} FROM {table_name} WHERE {scope_column} = :scope_value"),
+        {"scope_value": scope_value},
+    ).mappings().all()
+    return [
+        {
+            "storage_key": row.get("storage_key"),
+            "file_url": row.get("file_url"),
+            "provider": row.get("provider"),
+        }
+        for row in rows
+    ]
+
+
+def _delete_rows_by_scope(db: Session, table_name: str, scope_column: str, scope_value: str) -> None:
+    if not _table_exists(db, table_name) or not _table_has_column(db, table_name, scope_column):
+        return
+    db.execute(
+        text(f"DELETE FROM {table_name} WHERE {scope_column} = :scope_value"),
+        {"scope_value": scope_value},
+    )
+
+
+def _delete_file_assets(assets: list[dict]) -> None:
+    backend_root = Path(__file__).resolve().parents[2]
+    seen: set[tuple[str, str]] = set()
+    for asset in assets:
+        storage_key = str(asset.get("storage_key") or "").strip()
+        file_url = str(asset.get("file_url") or "").strip()
+        provider = str(asset.get("provider") or "").strip().lower()
+        key = (storage_key, file_url)
+        if key in seen:
+            continue
+        seen.add(key)
+        if storage_key and (provider == "supabase" or is_storage_configured()):
+            try:
+                delete_object(storage_key)
+            except Exception as exc:
+                logger.warning("Failed to delete storage object %s: %s", storage_key, exc)
+        if file_url and file_url.startswith("/files/"):
+            relative = file_url[len("/files/"):].lstrip("/")
+            candidates = [
+                backend_root / "uploaded_files" / relative,
+                backend_root / file_url.lstrip("/"),
+                Path("/app/uploaded_files") / relative,
+                Path("/app") / file_url.lstrip("/"),
+            ]
+            for path in candidates:
+                try:
+                    if path.exists() and path.is_file():
+                        path.unlink()
+                        break
+                except Exception as exc:
+                    logger.warning("Failed to delete local file %s: %s", path, exc)
+
+
+def _remove_mock_docs_for_project(project_id: str) -> None:
+    try:
+        from app.services import knowledge_service
+        keys = [
+            key
+            for key, doc in getattr(knowledge_service, "_mock_knowledge_docs", {}).items()
+            if str(getattr(doc, "project_id", "")) == str(project_id)
+        ]
+        for key in keys:
+            knowledge_service._mock_knowledge_docs.pop(key, None)
+    except Exception:
+        pass
+    try:
+        from app.services import document_service
+        keys = [
+            key
+            for key, doc in getattr(document_service, "_mock_documents", {}).items()
+            if str(getattr(doc, "project_id", "")) == str(project_id)
+        ]
+        for key in keys:
+            document_service._mock_documents.pop(key, None)
+    except Exception:
+        pass
 
 
 def _resolve_document_table(db: Session) -> Optional[str]:
@@ -351,15 +467,71 @@ def update_project(db: Session, project_id: str, payload: ProjectUpdate) -> Opti
 
 
 def delete_project(db: Session, project_id: str) -> bool:
-    # Unlink related data to avoid FK violations
-    db.execute(text("UPDATE meeting SET project_id = NULL WHERE project_id = :project_id"), {"project_id": project_id})
-    db.execute(text("UPDATE action_item SET project_id = NULL WHERE project_id = :project_id"), {"project_id": project_id})
-    db.execute(text("UPDATE document SET project_id = NULL WHERE project_id = :project_id"), {"project_id": project_id})
-    db.execute(text("UPDATE knowledge_document SET project_id = NULL WHERE project_id = :project_id"), {"project_id": project_id})
+    # 1) Delete all sessions/meetings under this project (deep cleanup).
+    try:
+        from app.services import meeting_service
+        meeting_rows = db.execute(
+            text("SELECT id::text FROM meeting WHERE project_id = :project_id"),
+            {"project_id": project_id},
+        ).fetchall()
+        meeting_ids = [row[0] for row in meeting_rows if row and row[0]]
+    except Exception as exc:
+        db.rollback()
+        logger.error("Failed to load meetings for project delete %s: %s", project_id, exc, exc_info=True)
+        return False
 
-    result = db.execute(text("DELETE FROM project WHERE id = :project_id RETURNING id"), {"project_id": project_id})
-    db.commit()
-    return result.fetchone() is not None
+    for meeting_id in meeting_ids:
+        ok = meeting_service.delete_meeting(db, meeting_id)
+        if not ok:
+            logger.warning("Meeting %s could not be deleted while deleting project %s", meeting_id, project_id)
+
+    # 2) Delete project-scoped docs/assets that are not tied to a deleted meeting.
+    assets: list[dict] = []
+    try:
+        assets.extend(_collect_assets_by_scope(db, "knowledge_document", "project_id", project_id))
+        assets.extend(_collect_assets_by_scope(db, "document", "project_id", project_id))
+        assets.extend(_collect_assets_by_scope(db, "documents", "project_id", project_id))
+    except Exception as exc:
+        logger.warning("Failed to collect project assets before delete %s: %s", project_id, exc)
+
+    try:
+        # Chunks scoped by project (legacy/project-only chunks).
+        _delete_rows_by_scope(db, "knowledge_chunk", "scope_project", project_id)
+
+        # Project-only metadata/history rows.
+        _delete_rows_by_scope(db, "action_item", "project_id", project_id)
+        _delete_rows_by_scope(db, "knowledge_document", "project_id", project_id)
+        _delete_rows_by_scope(db, "document", "project_id", project_id)
+        _delete_rows_by_scope(db, "documents", "project_id", project_id)
+        _delete_rows_by_scope(db, "project_member", "project_id", project_id)
+
+        # Safety: remove any meeting that still references this project.
+        leftover_meetings = db.execute(
+            text("SELECT id::text FROM meeting WHERE project_id = :project_id"),
+            {"project_id": project_id},
+        ).fetchall()
+        for row in leftover_meetings:
+            if row and row[0]:
+                from app.services import meeting_service
+                meeting_service.delete_meeting(db, row[0])
+
+        result = db.execute(
+            text("DELETE FROM project WHERE id = :project_id RETURNING id"),
+            {"project_id": project_id},
+        )
+        row = result.fetchone()
+        if not row:
+            db.rollback()
+            return False
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.error("Failed to delete project %s: %s", project_id, exc, exc_info=True)
+        return False
+
+    _delete_file_assets(assets)
+    _remove_mock_docs_for_project(project_id)
+    return True
 
 
 def list_members(db: Session, project_id: str) -> ProjectMemberList:

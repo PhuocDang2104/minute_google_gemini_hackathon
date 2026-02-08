@@ -65,6 +65,9 @@ async def analyze_video_file(
     max_keyframes: int = 60,
     run_ocr: bool = True,
     run_caption: bool = False,
+    vision_provider: str | None = None,
+    vision_model: str | None = None,
+    vision_api_key: str | None = None,
 ) -> Dict[str, Any]:
     """
     Send video file to ASR visual-ingest endpoint and return keyframe/ocr payload.
@@ -88,6 +91,12 @@ async def analyze_video_file(
     }
     if meeting_id:
         data["meeting_id"] = meeting_id
+    if vision_provider:
+        data["vision_provider"] = vision_provider
+    if vision_model:
+        data["vision_model"] = vision_model
+    if vision_api_key:
+        data["vision_api_key"] = vision_api_key
 
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:

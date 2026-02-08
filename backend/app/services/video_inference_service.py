@@ -19,6 +19,23 @@ from app.schemas.transcript import TranscriptChunkCreate
 logger = logging.getLogger(__name__)
 
 
+def _load_visual_override(db: Session, meeting_id: str) -> Optional[Dict[str, str]]:
+    try:
+        from app.services import user_service
+        row = db.execute(
+            text("SELECT organizer_id::text FROM meeting WHERE id = :meeting_id"),
+            {"meeting_id": meeting_id},
+        ).fetchone()
+        organizer_id = row[0] if row and row[0] else None
+        if organizer_id:
+            return user_service.get_user_visual_override(db, str(organizer_id))
+        # Demo fallback: match behavior used by llm-settings endpoint with non-UUID user IDs.
+        return user_service.get_user_visual_override(db, "demo")
+    except Exception:
+        db.rollback()
+        return None
+
+
 def _table_exists(db: Session, table_name: str) -> bool:
     try:
         result = db.execute(
@@ -252,17 +269,23 @@ async def process_meeting_video(
         visual_stats = {"events_saved": 0, "objects_saved": 0}
         try:
             logger.info("Analyzing visual timeline with ASR visual-ingest...")
+            visual_override = _load_visual_override(db, meeting_id) or {}
+            run_caption = bool(visual_override.get("api_key"))
             visual_payload = await asr_service.analyze_video_file(
                 video_path,
                 meeting_id=meeting_id,
                 run_ocr=True,
-                run_caption=False,
+                run_caption=run_caption,
+                vision_provider=visual_override.get("provider"),
+                vision_model=visual_override.get("model"),
+                vision_api_key=visual_override.get("api_key"),
             )
             visual_stats = _persist_visual_context(db, meeting_id, visual_payload)
             logger.info(
-                "Saved visual context: %s events, %s objects",
+                "Saved visual context: %s events, %s objects (caption=%s)",
                 visual_stats["events_saved"],
                 visual_stats["objects_saved"],
+                run_caption,
             )
         except Exception as exc:
             db.rollback()

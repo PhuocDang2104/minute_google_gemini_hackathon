@@ -162,14 +162,14 @@ def _run_ocr(image_path: Path) -> str:
     return out.strip()
 
 
-def _call_gemini_vision(image_path: Path, ocr_text: str) -> str:
-    if not LLM_VISION_API_KEY:
+def _call_gemini_vision(image_path: Path, ocr_text: str, *, model: str, api_key: str) -> str:
+    if not api_key:
         return ""
     try:
         image_b64 = base64.b64encode(image_path.read_bytes()).decode("utf-8")
         url = (
             f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{LLM_VISION_MODEL}:generateContent?key={LLM_VISION_API_KEY}"
+            f"{model}:generateContent?key={api_key}"
         )
         prompt = (
             "Analyze this meeting frame and return one concise sentence about what is shown. "
@@ -205,11 +205,18 @@ def _call_gemini_vision(image_path: Path, ocr_text: str) -> str:
         return ""
 
 
-def _call_vision_caption(image_path: Path, ocr_text: str) -> str:
+def _call_vision_caption(
+    image_path: Path,
+    ocr_text: str,
+    *,
+    provider: str,
+    model: str,
+    api_key: str,
+) -> str:
     # Current production path uses Gemini for visual captioning.
     # Provider switch is explicit to avoid confusion with chat LLM model selection.
-    if LLM_VISION_PROVIDER == "gemini":
-        return _call_gemini_vision(image_path, ocr_text)
+    if provider == "gemini":
+        return _call_gemini_vision(image_path, ocr_text, model=model, api_key=api_key)
     return ""
 
 
@@ -326,6 +333,9 @@ async def visual_ingest(
     max_keyframes: int = Form(default=MAX_KEYFRAMES),
     run_ocr: bool = Form(default=True),
     run_caption: bool = Form(default=False),
+    vision_provider: str | None = Form(default=None),
+    vision_model: str | None = Form(default=None),
+    vision_api_key: str | None = Form(default=None),
 ) -> JSONResponse:
     if not file or not file.filename:
         raise HTTPException(status_code=400, detail="file is required")
@@ -333,6 +343,9 @@ async def visual_ingest(
         raise HTTPException(status_code=400, detail="scene_threshold must be in (0, 1)")
 
     max_keyframes = max(1, min(max_keyframes, 200))
+    active_vision_provider = (vision_provider or LLM_VISION_PROVIDER or "gemini").strip().lower()
+    active_vision_model = (vision_model or LLM_VISION_MODEL or "gemini-1.5-flash").strip()
+    active_vision_api_key = (vision_api_key or LLM_VISION_API_KEY or "").strip()
 
     with tempfile.TemporaryDirectory(prefix="visual_") as tmpdir:
         tmp_path = Path(tmpdir)
@@ -359,7 +372,17 @@ async def visual_ingest(
             frame_path = item["frame_path"]
             timestamp = float(item["timestamp"])
             ocr_text = _run_ocr(frame_path) if run_ocr else ""
-            caption = _call_vision_caption(frame_path, ocr_text) if run_caption else ""
+            caption = (
+                _call_vision_caption(
+                    frame_path,
+                    ocr_text,
+                    provider=active_vision_provider,
+                    model=active_vision_model,
+                    api_key=active_vision_api_key,
+                )
+                if run_caption
+                else ""
+            )
             event_type = _infer_event_type(ocr_text, caption)
 
             visual_events.append(
@@ -381,9 +404,9 @@ async def visual_ingest(
                 "scene_threshold": scene_threshold,
                 "max_keyframes": max_keyframes,
                 "run_ocr": run_ocr,
-                "run_caption": run_caption and bool(LLM_VISION_API_KEY),
-                "vision_provider": LLM_VISION_PROVIDER,
-                "vision_model": LLM_VISION_MODEL,
+                "run_caption": run_caption and bool(active_vision_api_key),
+                "vision_provider": active_vision_provider,
+                "vision_model": active_vision_model,
             },
             "visual_events": visual_events,
             "visual_objects": visual_objects,

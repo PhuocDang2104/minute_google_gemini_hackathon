@@ -69,6 +69,10 @@ class Settings(BaseSettings):
         default='meta-llama/llama-4-scout-17b-16e-instruct',
         validation_alias=AliasChoices('LLM_GROQ_VISION_MODEL'),
     )
+    gemini_vision_model: str = Field(
+        default='gemini-1.5-flash',
+        validation_alias=AliasChoices('GEMINI_VISION_MODEL'),
+    )
     gemini_model: str = 'gemini-1.5-flash'
     ai_temperature: float = 0.7
     ai_max_tokens: int = 2048

@@ -82,6 +82,12 @@ interface LlmSettingsState {
   apiKeyInput: string
   apiKeySet: boolean
   apiKeyLast4?: string | null
+  visualProvider: LlmProvider
+  visualModel: string
+  visualApiKeyInput: string
+  visualApiKeySet: boolean
+  visualApiKeyLast4?: string | null
+  masterPrompt: string
 }
 
 const MODEL_OPTIONS: Record<LlmProvider, LlmModelOption[]> = {
@@ -98,12 +104,29 @@ const MODEL_OPTIONS: Record<LlmProvider, LlmModelOption[]> = {
   ],
 }
 
+const VISUAL_MODEL_OPTIONS: Record<LlmProvider, LlmModelOption[]> = {
+  gemini: [
+    { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash (Vision)' },
+    { value: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro (Vision)' },
+  ],
+  groq: [
+    { value: 'meta-llama/llama-4-scout-17b-16e-instruct', label: 'Llama 4 Scout 17B (Vision)' },
+    { value: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B Versatile (Vision)' },
+  ],
+}
+
 const defaultLlmSettings: LlmSettingsState = {
   provider: 'gemini',
   model: MODEL_OPTIONS.gemini[0].value,
   apiKeyInput: '',
   apiKeySet: false,
   apiKeyLast4: null,
+  visualProvider: 'gemini',
+  visualModel: VISUAL_MODEL_OPTIONS.gemini[0].value,
+  visualApiKeyInput: '',
+  visualApiKeySet: false,
+  visualApiKeyLast4: null,
+  masterPrompt: '',
 }
 
 const Settings = () => {
@@ -119,6 +142,8 @@ const Settings = () => {
   const [llmError, setLlmError] = useState<string | null>(null)
   const [showApiKey, setShowApiKey] = useState(false)
   const [clearApiKey, setClearApiKey] = useState(false)
+  const [showVisualApiKey, setShowVisualApiKey] = useState(false)
+  const [clearVisualApiKey, setClearVisualApiKey] = useState(false)
   const { language, setLanguage } = useLanguage()
 
   useEffect(() => {
@@ -166,13 +191,51 @@ const Settings = () => {
         const provider = response.provider || 'gemini'
         const modelOptions = MODEL_OPTIONS[provider as LlmProvider] || MODEL_OPTIONS.gemini
         const model = response.model || modelOptions[0]?.value || ''
+        const visualProvider = response.visual_provider || 'gemini'
+        const visualModelOptions = VISUAL_MODEL_OPTIONS[visualProvider as LlmProvider] || VISUAL_MODEL_OPTIONS.gemini
+        const visualModel = response.visual_model || visualModelOptions[0]?.value || ''
         setLlmSettings({
           provider: provider as LlmProvider,
           model,
           apiKeyInput: '',
           apiKeySet: response.api_key_set,
           apiKeyLast4: response.api_key_last4 || null,
+          visualProvider: visualProvider as LlmProvider,
+          visualModel,
+          visualApiKeyInput: '',
+          visualApiKeySet: Boolean(response.visual_api_key_set),
+          visualApiKeyLast4: response.visual_api_key_last4 || null,
+          masterPrompt: response.master_prompt || '',
         })
+        const behavior = response.behavior || {}
+        const nextNoteStyle = ['Ngắn gọn', 'Cân bằng', 'Chi tiết'].includes(String(behavior.note_style))
+          ? (behavior.note_style as NoteStyle)
+          : defaultSettings.personalization.noteStyle
+        const nextTone = [
+          'Chuyên nghiệp',
+          'Giáo dục (giải thích rõ)',
+          'Thân thiện',
+          'Thẳng vào vấn đề',
+          'Socratic (hỏi gợi mở)',
+        ].includes(String(behavior.tone))
+          ? (behavior.tone as ToneStyle)
+          : defaultSettings.personalization.tone
+        setSettings(prev => ({
+          ...prev,
+          personalization: {
+            ...prev.personalization,
+            nickname: behavior.nickname ?? '',
+            about: behavior.about ?? '',
+            futureFocus: behavior.future_focus ?? '',
+            role: behavior.role ?? '',
+            noteStyle: nextNoteStyle,
+            tone: nextTone,
+            citeEvidence:
+              typeof behavior.cite_evidence === 'boolean'
+                ? behavior.cite_evidence
+                : defaultSettings.personalization.citeEvidence,
+          },
+        }))
       } catch (err) {
         if (!active) return
         console.error('Failed to load LLM settings:', err)
@@ -265,9 +328,42 @@ const Settings = () => {
             model: string
             api_key?: string
             clear_api_key?: boolean
+            visual_provider: LlmProvider
+            visual_model: string
+            visual_api_key?: string
+            clear_visual_api_key?: boolean
+            master_prompt?: string | null
+            clear_master_prompt?: boolean
+            behavior?: {
+              nickname: string
+              about: string
+              future_focus: string
+              role: string
+              note_style: string
+              tone: string
+              cite_evidence: boolean
+            }
           } = {
             provider: llmSettings.provider,
             model: llmSettings.model,
+            visual_provider: llmSettings.visualProvider,
+            visual_model: llmSettings.visualModel,
+            behavior: {
+              nickname: settings.personalization.nickname,
+              about: settings.personalization.about,
+              future_focus: settings.personalization.futureFocus,
+              role: settings.personalization.role,
+              note_style: settings.personalization.noteStyle,
+              tone: settings.personalization.tone,
+              cite_evidence: settings.personalization.citeEvidence,
+            },
+          }
+          const trimmedMasterPrompt = llmSettings.masterPrompt.trim()
+          if (trimmedMasterPrompt) {
+            payload.master_prompt = trimmedMasterPrompt
+          } else {
+            payload.master_prompt = null
+            payload.clear_master_prompt = true
           }
           const trimmedKey = llmSettings.apiKeyInput.trim()
           if (clearApiKey) {
@@ -275,14 +371,29 @@ const Settings = () => {
           } else if (trimmedKey) {
             payload.api_key = trimmedKey
           }
+          const trimmedVisualKey = llmSettings.visualApiKeyInput.trim()
+          if (clearVisualApiKey) {
+            payload.clear_visual_api_key = true
+          } else if (trimmedVisualKey) {
+            payload.visual_api_key = trimmedVisualKey
+          }
           const result = await usersApi.updateLlmSettings(activeUser.id, payload)
           setLlmSettings(prev => ({
             ...prev,
+            provider: result.provider || prev.provider,
+            model: result.model || prev.model,
             apiKeyInput: '',
             apiKeySet: result.api_key_set,
             apiKeyLast4: result.api_key_last4 || null,
+            visualProvider: result.visual_provider || prev.visualProvider,
+            visualModel: result.visual_model || prev.visualModel,
+            visualApiKeyInput: '',
+            visualApiKeySet: Boolean(result.visual_api_key_set),
+            visualApiKeyLast4: result.visual_api_key_last4 || null,
+            masterPrompt: result.master_prompt || '',
           }))
           setClearApiKey(false)
+          setClearVisualApiKey(false)
           setLlmError(null)
         } catch (err) {
           console.error('Failed to save LLM settings:', err)
@@ -319,6 +430,23 @@ const Settings = () => {
     }
     if (llmSettings.apiKeySet) {
       const suffix = llmSettings.apiKeyLast4 ? `•••• ${llmSettings.apiKeyLast4}` : 'Đã lưu'
+      return { label: suffix, color: 'var(--success)', bg: 'var(--success-subtle)' }
+    }
+    return { label: 'Chưa thiết lập', color: 'var(--text-muted)', bg: 'var(--bg-surface)' }
+  })()
+
+  const visualApiKeyBadge = (() => {
+    if (llmLoading) {
+      return { label: 'Đang tải...', color: 'var(--text-muted)', bg: 'var(--bg-surface)' }
+    }
+    if (llmSettings.visualApiKeyInput.trim().length > 0) {
+      return { label: 'Sẽ cập nhật khi lưu', color: 'var(--text-primary)', bg: 'var(--bg-surface-hover)' }
+    }
+    if (clearVisualApiKey) {
+      return { label: 'Sẽ xoá khi lưu', color: 'var(--error)', bg: 'var(--error-subtle)' }
+    }
+    if (llmSettings.visualApiKeySet) {
+      const suffix = llmSettings.visualApiKeyLast4 ? `•••• ${llmSettings.visualApiKeyLast4}` : 'Đã lưu'
       return { label: suffix, color: 'var(--success)', bg: 'var(--success-subtle)' }
     }
     return { label: 'Chưa thiết lập', color: 'var(--text-muted)', bg: 'var(--bg-surface)' }
@@ -385,7 +513,7 @@ const Settings = () => {
           </div>
           <div className="card__body">
             <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 'var(--space-md)' }}>
-              Thiết lập phong cách và giọng điệu phản hồi của MINUTE. Không ảnh hưởng đến tính năng.
+              Thiết lập phong cách phản hồi của MINUTE. Các thông tin này được dùng để điều chỉnh prompt AI.
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
               <div>
@@ -626,6 +754,101 @@ const Settings = () => {
                     {llmError}
                   </div>
                 )}
+              </div>
+              <div style={{ borderTop: '1px solid var(--border)', paddingTop: 'var(--space-md)' }}>
+                <label style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 'var(--space-xs)', display: 'block' }}>
+                  Visual model (video/frame understanding)
+                </label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <select
+                    value={llmSettings.visualProvider}
+                    onChange={e => {
+                      const nextProvider = e.target.value as LlmProvider
+                      const options = VISUAL_MODEL_OPTIONS[nextProvider] || VISUAL_MODEL_OPTIONS.gemini
+                      const nextModel = options.find(item => item.value === llmSettings.visualModel)?.value || options[0]?.value || ''
+                      updateLlm('visualProvider', nextProvider)
+                      updateLlm('visualModel', nextModel)
+                    }}
+                    style={{ ...selectStyle, flex: 1 }}
+                  >
+                    <option value="gemini">Google Gemini (Vision)</option>
+                    <option value="groq">Groq (Vision)</option>
+                  </select>
+                  <select
+                    value={llmSettings.visualModel}
+                    onChange={e => updateLlm('visualModel', e.target.value)}
+                    style={{ ...selectStyle, flex: 1 }}
+                  >
+                    {(VISUAL_MODEL_OPTIONS[llmSettings.visualProvider] || []).map(item => (
+                      <option key={item.value} value={item.value}>{item.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                  Dùng cho pipeline ảnh/video (slide/frame caption), tách riêng khỏi chatbot để giảm hallucination.
+                </div>
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 'var(--space-xs)', display: 'block' }}>
+                  Visual API key (riêng)
+                </label>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <input
+                    type={showVisualApiKey ? 'text' : 'password'}
+                    placeholder="Nhập API key cho vision model"
+                    value={llmSettings.visualApiKeyInput}
+                    onChange={e => {
+                      updateLlm('visualApiKeyInput', e.target.value)
+                      setClearVisualApiKey(false)
+                    }}
+                    style={{ ...inputStyle, flex: 1 }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn--secondary btn--sm"
+                    onClick={() => setShowVisualApiKey(prev => !prev)}
+                  >
+                    {showVisualApiKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--secondary btn--sm"
+                    onClick={() => {
+                      setClearVisualApiKey(true)
+                      updateLlm('visualApiKeyInput', '')
+                    }}
+                    disabled={!llmSettings.visualApiKeySet}
+                  >
+                    Xoá key
+                  </button>
+                  <span
+                    style={{
+                      padding: '6px 10px',
+                      borderRadius: 999,
+                      background: visualApiKeyBadge.bg,
+                      color: visualApiKeyBadge.color,
+                      fontSize: 11,
+                      fontWeight: 600,
+                      border: '1px solid var(--border)',
+                    }}
+                  >
+                    {visualApiKeyBadge.label}
+                  </span>
+                </div>
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 'var(--space-xs)', display: 'block' }}>
+                  Master prompt cho AI
+                </label>
+                <textarea
+                  placeholder="Ví dụ: Ưu tiên bullet rõ ràng, nêu action theo owner/deadline, luôn chỉ ra timestamp khi có."
+                  value={llmSettings.masterPrompt}
+                  onChange={e => updateLlm('masterPrompt', e.target.value)}
+                  style={{ ...textAreaStyle, minHeight: '120px' }}
+                />
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                  Prompt này được ghép vào system prompt cho chatbot/tóm tắt và lưu trên server.
+                </div>
               </div>
 
               <div style={{ marginTop: 'var(--space-sm)' }}>

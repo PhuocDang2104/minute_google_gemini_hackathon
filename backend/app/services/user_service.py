@@ -4,13 +4,15 @@ import uuid
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.schemas.user import User, UserList, Department
-from app.schemas.llm_settings import LlmSettings, LlmSettingsUpdate
+from app.schemas.llm_settings import LlmSettings, LlmSettingsUpdate, LlmBehaviorSettings
 from app.core.config import get_settings
 from app.utils.crypto import encrypt_secret, decrypt_secret
 
 settings = get_settings()
 
 _DEMO_LLM_USER_ID = "00000000-0000-0000-0000-000000000001"
+_MAX_MASTER_PROMPT_CHARS = 8000
+_MAX_BEHAVIOR_FIELD_CHARS = 1000
 
 
 def _resolve_llm_user_id(user_id: str) -> Tuple[str, bool]:
@@ -35,6 +37,65 @@ def _ensure_demo_user(db: Session, user_id: str) -> None:
         {"id": user_id, "email": demo_email, "display_name": "Demo LLM"},
     )
     db.commit()
+
+
+def _clean_text(value: Any, max_chars: int) -> Optional[str]:
+    if value is None:
+        return None
+    text_value = str(value).strip()
+    if not text_value:
+        return None
+    return text_value[:max_chars]
+
+
+def _normalize_behavior(raw_behavior: Dict[str, Any]) -> LlmBehaviorSettings:
+    if not isinstance(raw_behavior, dict):
+        raw_behavior = {}
+    cite_raw = raw_behavior.get("cite_evidence")
+    cite_value = bool(cite_raw) if isinstance(cite_raw, bool) else None
+    return LlmBehaviorSettings(
+        nickname=_clean_text(raw_behavior.get("nickname"), _MAX_BEHAVIOR_FIELD_CHARS),
+        about=_clean_text(raw_behavior.get("about"), _MAX_BEHAVIOR_FIELD_CHARS),
+        future_focus=_clean_text(raw_behavior.get("future_focus"), _MAX_BEHAVIOR_FIELD_CHARS),
+        role=_clean_text(raw_behavior.get("role"), _MAX_BEHAVIOR_FIELD_CHARS),
+        note_style=_clean_text(raw_behavior.get("note_style"), 80),
+        tone=_clean_text(raw_behavior.get("tone"), 120),
+        cite_evidence=cite_value,
+    )
+
+
+def _serialize_behavior_from_update(payload: LlmSettingsUpdate) -> Dict[str, Any]:
+    if not payload.behavior:
+        return {}
+    cleaned: Dict[str, Any] = {}
+    provided_fields = getattr(payload.behavior, "model_fields_set", set())
+    if not provided_fields:
+        return cleaned
+    raw = payload.behavior.model_dump()
+    for key in provided_fields:
+        value = raw.get(key)
+        if key == "cite_evidence":
+            if isinstance(value, bool):
+                cleaned[key] = value
+            else:
+                cleaned[key] = None
+            continue
+        cleaned[key] = _clean_text(value, _MAX_BEHAVIOR_FIELD_CHARS)
+    return cleaned
+
+
+def _build_behavior_profile(raw_behavior: Dict[str, Any]) -> Optional[str]:
+    behavior = _normalize_behavior(raw_behavior)
+    profile_parts: List[str] = []
+    if behavior.nickname:
+        profile_parts.append(f"User nickname: {behavior.nickname}")
+    if behavior.role:
+        profile_parts.append(f"Role: {behavior.role}")
+    if behavior.about:
+        profile_parts.append(f"About user: {behavior.about}")
+    if behavior.future_focus:
+        profile_parts.append(f"Future focus: {behavior.future_focus}")
+    return "\n".join(profile_parts) if profile_parts else None
 
 
 def get_user_stub() -> User:
@@ -207,15 +268,39 @@ def _normalize_llm_settings(raw_llm: Dict[str, Any]) -> LlmSettings:
     api_key_encrypted = raw_llm.get("api_key") or ""
     api_key_last4 = raw_llm.get("api_key_last4")
     api_key_set = bool(api_key_encrypted)
+    visual_provider = raw_llm.get("visual_provider") or "gemini"
+    if visual_provider not in ("gemini", "groq"):
+        visual_provider = "gemini"
+    default_visual_model = (
+        settings.gemini_vision_model
+        if visual_provider == "gemini"
+        else settings.llm_groq_vision_model
+    )
+    visual_model = raw_llm.get("visual_model") or default_visual_model
+    visual_api_key_encrypted = raw_llm.get("visual_api_key") or ""
+    visual_api_key_last4 = raw_llm.get("visual_api_key_last4")
+    visual_api_key_set = bool(visual_api_key_encrypted)
+    master_prompt = _clean_text(raw_llm.get("master_prompt"), _MAX_MASTER_PROMPT_CHARS)
+    behavior = _normalize_behavior(raw_llm.get("behavior") or {})
     if api_key_set and not api_key_last4:
         plain = decrypt_secret(api_key_encrypted)
         if plain:
             api_key_last4 = plain[-4:]
+    if visual_api_key_set and not visual_api_key_last4:
+        plain_visual = decrypt_secret(visual_api_key_encrypted)
+        if plain_visual:
+            visual_api_key_last4 = plain_visual[-4:]
     return LlmSettings(
         provider=provider,
         model=model,
         api_key_set=api_key_set,
         api_key_last4=api_key_last4,
+        visual_provider=visual_provider,
+        visual_model=visual_model,
+        visual_api_key_set=visual_api_key_set,
+        visual_api_key_last4=visual_api_key_last4,
+        master_prompt=master_prompt,
+        behavior=behavior,
     )
 
 
@@ -262,12 +347,52 @@ def update_llm_settings(
         llm = {}
     llm["provider"] = payload.provider
     llm["model"] = payload.model
+    if payload.visual_provider is not None:
+        llm["visual_provider"] = payload.visual_provider
+    elif not llm.get("visual_provider"):
+        llm["visual_provider"] = "gemini"
+    if llm.get("visual_provider") not in ("gemini", "groq"):
+        llm["visual_provider"] = "gemini"
+    if payload.visual_model is not None:
+        llm["visual_model"] = payload.visual_model
+    elif not llm.get("visual_model"):
+        default_visual_model = (
+            settings.gemini_vision_model
+            if llm.get("visual_provider") == "gemini"
+            else settings.llm_groq_vision_model
+        )
+        llm["visual_model"] = default_visual_model
     if payload.clear_api_key:
         llm.pop("api_key", None)
         llm.pop("api_key_last4", None)
     elif payload.api_key is not None:
         llm["api_key"] = encrypt_secret(payload.api_key)
         llm["api_key_last4"] = payload.api_key[-4:]
+    if payload.clear_visual_api_key:
+        llm.pop("visual_api_key", None)
+        llm.pop("visual_api_key_last4", None)
+    elif payload.visual_api_key is not None:
+        llm["visual_api_key"] = encrypt_secret(payload.visual_api_key)
+        llm["visual_api_key_last4"] = payload.visual_api_key[-4:]
+    if payload.clear_master_prompt:
+        llm.pop("master_prompt", None)
+    elif "master_prompt" in payload.model_fields_set:
+        clean_prompt = _clean_text(payload.master_prompt, _MAX_MASTER_PROMPT_CHARS)
+        if clean_prompt:
+            llm["master_prompt"] = clean_prompt
+        else:
+            llm.pop("master_prompt", None)
+    if payload.behavior is not None:
+        merged_behavior = llm.get("behavior") if isinstance(llm.get("behavior"), dict) else {}
+        if not isinstance(merged_behavior, dict):
+            merged_behavior = {}
+        incoming_behavior = _serialize_behavior_from_update(payload)
+        for key, value in incoming_behavior.items():
+            if value is None:
+                merged_behavior.pop(key, None)
+            else:
+                merged_behavior[key] = value
+        llm["behavior"] = merged_behavior
     prefs["llm"] = llm
     update_query = text(
         """
@@ -291,8 +416,8 @@ def update_llm_settings(
     return _normalize_llm_settings(llm)
 
 
-def get_user_llm_override(db: Session, user_id: str) -> Optional[Dict[str, str]]:
-    def _fetch_override(target_user_id: str) -> Optional[Dict[str, str]]:
+def get_user_llm_override(db: Session, user_id: str) -> Optional[Dict[str, Any]]:
+    def _fetch_override(target_user_id: str) -> Optional[Dict[str, Any]]:
         query = text("SELECT preferences FROM user_account WHERE id = :user_id")
         result = db.execute(query, {"user_id": target_user_id})
         row = result.fetchone()
@@ -307,9 +432,61 @@ def get_user_llm_override(db: Session, user_id: str) -> Optional[Dict[str, str]]
         provider = llm.get("provider") or ""
         model = llm.get("model") or ""
         api_key = decrypt_secret(llm.get("api_key") or "")
+        master_prompt = _clean_text(llm.get("master_prompt"), _MAX_MASTER_PROMPT_CHARS)
+        behavior = llm.get("behavior") if isinstance(llm.get("behavior"), dict) else {}
+        behavior = _normalize_behavior(behavior)
+        behavior_profile = _build_behavior_profile(behavior.model_dump())
         if not (provider and model and api_key):
             return None
         if provider not in ("gemini", "groq"):
+            return None
+        return {
+            "provider": provider,
+            "model": model,
+            "api_key": api_key,
+            "master_prompt": master_prompt,
+            "behavior_note_style": behavior.note_style,
+            "behavior_tone": behavior.tone,
+            "behavior_cite_evidence": behavior.cite_evidence,
+            "behavior_profile": behavior_profile,
+        }
+
+    try:
+        uuid.UUID(str(user_id))
+        override = _fetch_override(str(user_id))
+    except (ValueError, TypeError):
+        override = None
+
+    if override:
+        return override
+
+    demo_id = _DEMO_LLM_USER_ID
+    if user_id == demo_id:
+        return None
+    return _fetch_override(demo_id)
+
+
+def get_user_visual_override(db: Session, user_id: str) -> Optional[Dict[str, str]]:
+    def _fetch_override(target_user_id: str) -> Optional[Dict[str, str]]:
+        query = text("SELECT preferences FROM user_account WHERE id = :user_id")
+        result = db.execute(query, {"user_id": target_user_id})
+        row = result.fetchone()
+        if not row:
+            return None
+        prefs = row[0] or {}
+        if not isinstance(prefs, dict):
+            return None
+        llm = prefs.get("llm") or {}
+        if not isinstance(llm, dict):
+            return None
+        provider = llm.get("visual_provider") or "gemini"
+        if provider not in ("gemini", "groq"):
+            provider = "gemini"
+        model = llm.get("visual_model") or (
+            settings.gemini_vision_model if provider == "gemini" else settings.llm_groq_vision_model
+        )
+        api_key = decrypt_secret(llm.get("visual_api_key") or "")
+        if not api_key:
             return None
         return {"provider": provider, "model": model, "api_key": api_key}
 

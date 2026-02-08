@@ -34,11 +34,27 @@ export interface DepartmentListResponse {
 
 export type LlmProvider = 'gemini' | 'groq';
 
+export interface LlmBehaviorSettings {
+  nickname?: string | null;
+  about?: string | null;
+  future_focus?: string | null;
+  role?: string | null;
+  note_style?: string | null;
+  tone?: string | null;
+  cite_evidence?: boolean | null;
+}
+
 export interface LlmSettings {
   provider: LlmProvider;
   model: string;
   api_key_set: boolean;
   api_key_last4?: string | null;
+  visual_provider: LlmProvider;
+  visual_model: string;
+  visual_api_key_set: boolean;
+  visual_api_key_last4?: string | null;
+  master_prompt?: string | null;
+  behavior?: LlmBehaviorSettings;
 }
 
 export interface LlmSettingsUpdate {
@@ -46,6 +62,13 @@ export interface LlmSettingsUpdate {
   model: string;
   api_key?: string;
   clear_api_key?: boolean;
+  visual_provider?: LlmProvider;
+  visual_model?: string;
+  visual_api_key?: string;
+  clear_visual_api_key?: boolean;
+  master_prompt?: string | null;
+  clear_master_prompt?: boolean;
+  behavior?: LlmBehaviorSettings;
 }
 
 // Helper function to get initials

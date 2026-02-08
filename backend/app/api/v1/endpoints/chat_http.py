@@ -23,9 +23,10 @@ from app.schemas.chat import (
     AIGenerationResponse,
 )
 from app.schemas.knowledge import KnowledgeQueryRequest
-from app.llm.gemini_client import GeminiChat, MeetingAIAssistant, is_gemini_available, get_llm_status
+from app.llm.gemini_client import GeminiChat, MeetingAIAssistant, LLMConfig, is_gemini_available, get_llm_status
 from app.services import knowledge_service
 from app.services import summary_service
+from app.services import user_service
 
 router = APIRouter()
 
@@ -84,20 +85,68 @@ HOME_ASK_MOCK_RESPONSE = (
 
 # Store chat sessions in memory (for demo - use Redis in production)
 chat_sessions: dict = {}
+_DEMO_LLM_USER_ID = "00000000-0000-0000-0000-000000000001"
 
 
-def get_or_create_session(session_id: Optional[str], meeting_id: Optional[str]) -> tuple:
+def _load_runtime_llm_config(db: Session, meeting_id: Optional[str]) -> Optional[LLMConfig]:
+    organizer_id: Optional[str] = None
+    if meeting_id:
+        try:
+            result = db.execute(
+                text("SELECT organizer_id::text FROM meeting WHERE id = :meeting_id"),
+                {"meeting_id": meeting_id},
+            )
+            row = result.fetchone()
+            if row and row[0]:
+                organizer_id = str(row[0])
+        except Exception:
+            db.rollback()
+    target_user_id = organizer_id or _DEMO_LLM_USER_ID
+    try:
+        override = user_service.get_user_llm_override(db, target_user_id)
+        if override:
+            return LLMConfig(**override)
+    except Exception:
+        db.rollback()
+    return None
+
+
+def get_or_create_session(
+    session_id: Optional[str],
+    meeting_id: Optional[str],
+    llm_config: Optional[LLMConfig] = None,
+) -> tuple:
     """Get existing session or create new one"""
+    llm_fingerprint = None
+    if llm_config:
+        llm_fingerprint = json.dumps(
+            {
+                "provider": llm_config.provider,
+                "model": llm_config.model,
+                "master_prompt": llm_config.master_prompt or "",
+                "note_style": llm_config.behavior_note_style or "",
+                "tone": llm_config.behavior_tone or "",
+                "cite": llm_config.behavior_cite_evidence,
+                "profile": llm_config.behavior_profile or "",
+            },
+            sort_keys=True,
+            ensure_ascii=False,
+        )
     if session_id and session_id in chat_sessions:
-        return session_id, chat_sessions[session_id]
+        session = chat_sessions[session_id]
+        if llm_fingerprint and session.get("llm_fingerprint") != llm_fingerprint:
+            session["chat"] = GeminiChat(llm_config=llm_config)
+            session["llm_fingerprint"] = llm_fingerprint
+        return session_id, session
     
     new_id = session_id or str(uuid4())
     chat_sessions[new_id] = {
         'id': new_id,
         'meeting_id': meeting_id,
-        'chat': GeminiChat(),
+        'chat': GeminiChat(llm_config=llm_config),
         'messages': [],
         'created_at': datetime.utcnow(),
+        'llm_fingerprint': llm_fingerprint,
     }
     return new_id, chat_sessions[new_id]
 
@@ -138,8 +187,8 @@ async def send_message(
     db: Session = Depends(get_db)
 ):
     """Send a message to AI and get response"""
-    
-    session_id, session = get_or_create_session(request.session_id, request.meeting_id)
+    llm_config = _load_runtime_llm_config(db, request.meeting_id)
+    session_id, session = get_or_create_session(request.session_id, request.meeting_id, llm_config)
     
     # Get meeting context if requested
     context = None
@@ -237,13 +286,21 @@ async def send_message(
 
 
 @router.post('/home', response_model=ChatResponse)
-async def home_ask(request: HomeAskRequest):
+async def home_ask(
+    request: HomeAskRequest,
+    db: Session = Depends(get_db),
+):
     """Lightweight home ask endpoint with strict MINUTE context."""
     message = request.message.strip()
     if not message:
         raise HTTPException(status_code=400, detail="Message is required")
 
-    chat = GeminiChat(system_prompt=HOME_ASK_SYSTEM_PROMPT, mock_response=HOME_ASK_MOCK_RESPONSE)
+    llm_config = _load_runtime_llm_config(db, meeting_id=None)
+    chat = GeminiChat(
+        system_prompt=HOME_ASK_SYSTEM_PROMPT,
+        mock_response=HOME_ASK_MOCK_RESPONSE,
+        llm_config=llm_config,
+    )
     response_text = await chat.chat(message)
 
     return ChatResponse(
@@ -295,10 +352,25 @@ def get_session(session_id: str):
 
 
 @router.delete('/sessions/{session_id}')
-def delete_session(session_id: str):
-    """Delete a chat session"""
+def delete_session(session_id: str, db: Session = Depends(get_db)):
+    """Delete a chat session (in-memory + DB history if present)."""
     if session_id in chat_sessions:
         del chat_sessions[session_id]
+    try:
+        db.execute(
+            text("DELETE FROM chat_message WHERE session_id = :session_id"),
+            {"session_id": session_id},
+        )
+    except Exception:
+        db.rollback()
+    try:
+        db.execute(
+            text("DELETE FROM chat_session WHERE id = :session_id"),
+            {"session_id": session_id},
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
     return {'status': 'deleted'}
 
 
@@ -312,9 +384,10 @@ async def generate_agenda_ai(
     db: Session = Depends(get_db)
 ):
     """Generate meeting agenda using AI"""
+    llm_config = _load_runtime_llm_config(db, request.meeting_id)
     assistant = MeetingAIAssistant(request.meeting_id, {
         'type': request.meeting_type,
-    })
+    }, llm_config=llm_config)
     
     result = await assistant.generate_agenda(request.meeting_type)
     
@@ -332,7 +405,8 @@ async def extract_items_ai(
     db: Session = Depends(get_db)
 ):
     """Extract action items, decisions, or risks from transcript"""
-    assistant = MeetingAIAssistant(request.meeting_id)
+    llm_config = _load_runtime_llm_config(db, request.meeting_id)
+    assistant = MeetingAIAssistant(request.meeting_id, llm_config=llm_config)
     
     if request.item_type == 'actions':
         result = await assistant.extract_action_items(request.transcript)
@@ -357,7 +431,8 @@ async def generate_summary_ai(
     db: Session = Depends(get_db)
 ):
     """Generate meeting summary from transcript"""
-    assistant = MeetingAIAssistant(request.meeting_id)
+    llm_config = _load_runtime_llm_config(db, request.meeting_id)
+    assistant = MeetingAIAssistant(request.meeting_id, llm_config=llm_config)
 
     result = await assistant.generate_summary(request.transcript)
     summary_text = (result or "").strip()
