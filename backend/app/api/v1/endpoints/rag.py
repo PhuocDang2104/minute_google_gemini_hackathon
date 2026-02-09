@@ -14,8 +14,11 @@ from app.db.session import get_db
 from app.schemas.ai import RAGQuery, RAGResponse, RAGHistory, Citation
 from app.schemas.knowledge import KnowledgeQueryRequest
 from app.services import knowledge_service
+from app.services import user_service
+from app.llm.gemini_client import LLMConfig
 
 router = APIRouter()
+_DEMO_LLM_USER_ID = "00000000-0000-0000-0000-000000000001"
 
 
 def _get_meeting_context(db: Session, meeting_id: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
@@ -39,6 +42,28 @@ def _get_meeting_context(db: Session, meeting_id: Optional[str]) -> Tuple[Option
     return context, row[4]
 
 
+def _load_runtime_llm_config(db: Session, meeting_id: Optional[str]) -> Optional[LLMConfig]:
+    organizer_id: Optional[str] = None
+    if meeting_id:
+        try:
+            row = db.execute(
+                text("SELECT organizer_id::text FROM meeting WHERE id = :meeting_id"),
+                {"meeting_id": meeting_id},
+            ).fetchone()
+            if row and row[0]:
+                organizer_id = str(row[0])
+        except Exception:
+            db.rollback()
+    target_user_id = organizer_id or _DEMO_LLM_USER_ID
+    try:
+        override = user_service.get_user_llm_override(db, target_user_id)
+        if override:
+            return LLMConfig(**override)
+    except Exception:
+        db.rollback()
+    return None
+
+
 def _to_citations(docs) -> list[Citation]:
     citations: list[Citation] = []
     for doc in docs:
@@ -59,6 +84,7 @@ async def query_rag(
     db: Session = Depends(get_db)
 ):
     """Query RAG using uploaded docs/chunks scoped by meeting/project."""
+    llm_config = _load_runtime_llm_config(db, request.meeting_id)
 
     meeting_context = None
     project_id = None
@@ -78,7 +104,11 @@ async def query_rag(
         project_id=project_id,
     )
 
-    rag_result = await knowledge_service.query_knowledge_ai(db, knowledge_request)
+    rag_result = await knowledge_service.query_knowledge_ai(
+        db,
+        knowledge_request,
+        llm_config=llm_config,
+    )
     answer = rag_result.answer
     if meeting_context:
         normalized = (answer or "").lower()

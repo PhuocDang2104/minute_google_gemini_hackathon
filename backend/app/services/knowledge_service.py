@@ -26,7 +26,7 @@ from app.schemas.knowledge import (
     KnowledgeQueryRequest,
     KnowledgeQueryResponse,
 )
-from app.llm.gemini_client import GeminiChat, is_gemini_available
+from app.llm.gemini_client import GeminiChat, is_gemini_available, LLMConfig
 from app.llm.clients.jina_embed import embed_texts, is_jina_available
 from app.vectorstore.pgvector_client import PgVectorClient
 from app.services.storage_client import (
@@ -1275,6 +1275,7 @@ async def search_documents(
 async def query_knowledge_ai(
     db: Session,
     request: KnowledgeQueryRequest,
+    llm_config: Optional[LLMConfig] = None,
 ) -> KnowledgeQueryResponse:
     """RAG query using session docs + transcript + visual context."""
     # Smalltalk/noise handling
@@ -1453,7 +1454,8 @@ async def query_knowledge_ai(
                         "You are MINUTE Knowledge Assistant. Respond concisely in English. "
                         "Respond in English even if the question is in Vietnamese. "
                         "Do not hallucinate; if evidence is missing, say so clearly and ask for more context."
-                    )
+                    ),
+                    llm_config=llm_config,
                 )
                 prompt = f"""Question: {request.query}
 No relevant documents, transcript, or visual context were found for this session.
@@ -1485,7 +1487,8 @@ Please:
                     "Respond in English even if the question is in Vietnamese. "
                     "Use ONLY the information inside Context (docs, transcript, visual). "
                     "If Context covers only part of a meeting/session, answer what is supported and clearly state the scope."
-                )
+                ),
+                llm_config=llm_config,
             )
             prompt = f"""Question: {request.query}
 

@@ -9,6 +9,7 @@ from datetime import datetime
 from uuid import uuid4
 from typing import Optional
 import json
+import hashlib
 
 from app.db.session import get_db
 from app.schemas.chat import (
@@ -119,10 +120,16 @@ def get_or_create_session(
     """Get existing session or create new one"""
     llm_fingerprint = None
     if llm_config:
+        # Include an API-key hash fingerprint so changing key in Settings
+        # takes effect immediately even when reusing the same chat session id.
+        api_key_hash = ""
+        if llm_config.api_key:
+            api_key_hash = hashlib.sha256(llm_config.api_key.encode("utf-8")).hexdigest()[:12]
         llm_fingerprint = json.dumps(
             {
                 "provider": llm_config.provider,
                 "model": llm_config.model,
+                "api_key_hash": api_key_hash,
                 "master_prompt": llm_config.master_prompt or "",
                 "note_style": llm_config.behavior_note_style or "",
                 "tone": llm_config.behavior_tone or "",
@@ -134,7 +141,7 @@ def get_or_create_session(
         )
     if session_id and session_id in chat_sessions:
         session = chat_sessions[session_id]
-        if llm_fingerprint and session.get("llm_fingerprint") != llm_fingerprint:
+        if session.get("llm_fingerprint") != llm_fingerprint:
             session["chat"] = GeminiChat(llm_config=llm_config)
             session["llm_fingerprint"] = llm_fingerprint
         return session_id, session
@@ -227,6 +234,7 @@ async def send_message(
                     meeting_id=request.meeting_id,
                     project_id=project_id,
                 ),
+                llm_config=llm_config,
             )
             response_text = rag_result.answer
             response_sources = [doc.title for doc in rag_result.relevant_documents] or None
