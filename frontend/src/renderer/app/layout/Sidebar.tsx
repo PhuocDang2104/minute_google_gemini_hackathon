@@ -8,7 +8,7 @@ import {
   FolderPlus,
   Calendar,
 } from 'lucide-react'
-import { currentUser, getInitials } from '../../store/mockData'
+import { currentUser } from '../../store/mockData'
 import { getStoredUser } from '../../lib/api/auth'
 import { Modal } from '../../components/ui/Modal'
 import { CreateMeetingForm } from '../../features/meetings/components/CreateMeetingForm'
@@ -173,11 +173,15 @@ const Sidebar = () => {
       <div className="sidebar__footer">
         <div className="sidebar__user">
           <div className="sidebar__avatar">
-            {getInitials(displayUser.display_name || displayUser.displayName || 'U')}
+            <img
+              className="sidebar__avatar-image"
+              src="/asset/gemini-ava.png"
+              alt="Gemini avatar"
+            />
           </div>
           <div className="sidebar__user-info">
             <div className="sidebar__user-name">{displayUser.display_name || displayUser.displayName}</div>
-            <div className="sidebar__user-role">{displayUser.role || 'User'}</div>
+            <div className="sidebar__user-role">AI Engineer</div>
           </div>
         </div>
       </div>
@@ -241,6 +245,7 @@ const Sidebar = () => {
             <label>
               <span>{lt('Tên dự án *', 'Project name *')}</span>
               <input
+                className="form-input"
                 value={createProjectForm.name}
                 onChange={(e) => setCreateProjectForm(prev => ({ ...prev, name: e.target.value }))}
                 placeholder={lt('VD: Core Banking Modernization', 'e.g. Core Banking Modernization')}
@@ -249,6 +254,7 @@ const Sidebar = () => {
             <label>
               <span>{lt('Mã dự án', 'Project code')}</span>
               <input
+                className="form-input"
                 value={createProjectForm.code}
                 onChange={(e) => setCreateProjectForm(prev => ({ ...prev, code: e.target.value }))}
                 placeholder="CB-2024"
@@ -257,6 +263,7 @@ const Sidebar = () => {
             <label className="project-modal__full">
               <span>{lt('Mô tả', 'Description')}</span>
               <textarea
+                className="form-textarea"
                 rows={3}
                 value={createProjectForm.description}
                 onChange={(e) => setCreateProjectForm(prev => ({ ...prev, description: e.target.value }))}
@@ -266,6 +273,7 @@ const Sidebar = () => {
             <label className="project-modal__full">
               <span>{lt('Mục tiêu', 'Objective')}</span>
               <textarea
+                className="form-textarea"
                 rows={3}
                 value={createProjectForm.objective}
                 onChange={(e) => setCreateProjectForm(prev => ({ ...prev, objective: e.target.value }))}

@@ -4,7 +4,6 @@ import {
   ArrowLeft,
   Calendar,
   Clock,
-  MapPin,
   AlertCircle,
   RefreshCw,
   Video,
@@ -46,8 +45,6 @@ export const MeetingDetail = () => {
     description: '',
     start_time: '',
     end_time: '',
-    teams_link: '',
-    location: '',
   });
   const [isSaving, setIsSaving] = useState(false);
 
@@ -159,8 +156,6 @@ export const MeetingDetail = () => {
       description: meeting.description || '',
       start_time: formatDateTimeLocal(meeting.start_time),
       end_time: formatDateTimeLocal(meeting.end_time),
-      teams_link: meeting.teams_link || '',
-      location: meeting.location || '',
     });
     setShowEditModal(true);
   };
@@ -176,8 +171,6 @@ export const MeetingDetail = () => {
         description: editForm.description || undefined,
         start_time: editForm.start_time ? new Date(editForm.start_time).toISOString() : undefined,
         end_time: editForm.end_time ? new Date(editForm.end_time).toISOString() : undefined,
-        teams_link: editForm.teams_link || undefined,
-        location: editForm.location || undefined,
       };
 
       await meetingsApi.update(meetingId, updateData);
@@ -333,7 +326,7 @@ export const MeetingDetail = () => {
             <div className="modal__header">
               <h2 className="modal__title">
                 <Edit2 size={20} />
-                {lt('Chỉnh sửa cuộc họp', 'Edit meeting')}
+                {lt('Chỉnh sửa phiên', 'Edit session')}
               </h2>
               <button className="btn btn--ghost btn--icon" onClick={() => setShowEditModal(false)}>
                 <X size={20} />
@@ -342,7 +335,7 @@ export const MeetingDetail = () => {
 
             <div className="modal__body">
               <div className="form-group">
-                <label className="form-label">{lt('Tiêu đề cuộc họp', 'Meeting title')}</label>
+                <label className="form-label">{lt('Tiêu đề phiên', 'Session title')}</label>
                 <input
                   type="text"
                   className="form-input"
@@ -389,34 +382,6 @@ export const MeetingDetail = () => {
                     onChange={e => setEditForm({ ...editForm, end_time: e.target.value })}
                   />
                 </div>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">
-                  <Video size={14} style={{ marginRight: '6px' }} />
-                  {lt('Link MS Teams', 'MS Teams link')}
-                </label>
-                <input
-                  type="url"
-                  className="form-input"
-                  value={editForm.teams_link}
-                  onChange={e => setEditForm({ ...editForm, teams_link: e.target.value })}
-                  placeholder="https://teams.microsoft.com/..."
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">
-                  <MapPin size={14} style={{ marginRight: '6px' }} />
-                  {lt('Địa điểm', 'Location')}
-                </label>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={editForm.location}
-                  onChange={e => setEditForm({ ...editForm, location: e.target.value })}
-                  placeholder={lt('Phòng họp hoặc Online', 'Meeting room or online')}
-                />
               </div>
             </div>
 

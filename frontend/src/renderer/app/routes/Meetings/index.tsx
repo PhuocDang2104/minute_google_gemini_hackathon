@@ -293,7 +293,10 @@ const Meetings = () => {
       <header className="drive-welcome">
         <h1>Workspace</h1>
         <p>
-          Không gian làm việc tập trung để quản trị phiên họp, tài liệu và dự án xuyên suốt.
+          {lt(
+            'Không gian làm việc tập trung để quản trị phiên họp, tài liệu và dự án xuyên suốt.',
+            'A focused workspace to manage sessions, documents, and projects end-to-end.',
+          )}
         </p>
       </header>
 

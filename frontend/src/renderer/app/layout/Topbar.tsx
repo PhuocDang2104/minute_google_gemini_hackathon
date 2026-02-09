@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
 import { useLocation, Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, HelpCircle, Home, ChevronRight, Search } from 'lucide-react'
+import { ArrowLeft, HelpCircle, Home, ChevronRight, Search, LogOut } from 'lucide-react'
 import { useLocaleText } from '../../i18n/useLocaleText'
 import { useLanguage } from '../../contexts/LanguageContext'
+import { logout } from '../../lib/api/auth'
 
 const Topbar = () => {
   const location = useLocation()
@@ -45,6 +46,12 @@ const Topbar = () => {
     if (path.startsWith('/app/tasks')) return lt('Nhiệm vụ', 'Tasks')
     if (path.startsWith('/app/settings')) return lt('Cài đặt', 'Settings')
     return 'Minute'
+  }
+
+  const handleLogout = () => {
+    void logout()
+      .catch(() => null)
+      .finally(() => navigate('/'))
   }
 
   return (
@@ -126,6 +133,14 @@ const Topbar = () => {
             <Link to="/about" className="topbar__icon-btn" title={lt('Giới thiệu Minute', 'About Minute')}>
               <HelpCircle size={18} />
             </Link>
+            <button
+              type="button"
+              className="topbar__icon-btn topbar__icon-btn--logout"
+              title={lt('Quay về landing page', 'Back to landing page')}
+              onClick={handleLogout}
+            >
+              <LogOut size={18} />
+            </button>
           </div>
         </>
       )}

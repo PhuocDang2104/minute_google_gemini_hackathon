@@ -416,7 +416,11 @@ const ChatSidebar = () => {
         <div className="ai-sidebar__header">
           <div className="ai-sidebar__header-left">
             <div className="ai-sidebar__avatar">
-              <Bot size={18} />
+              <img
+                className="ai-sidebar__avatar-image"
+                src="/asset/gemini-ava.png"
+                alt="Gemini avatar"
+              />
             </div>
             <div>
               <div className="ai-sidebar__title">{context.title}</div>

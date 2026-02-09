@@ -25,7 +25,6 @@ import {
   X,
   Video,
   Upload,
-  Play,
   Loader,
   Trash2,
 } from 'lucide-react';
@@ -37,6 +36,7 @@ import { meetingsApi } from '../../../../lib/api/meetings';
 import { minutesTemplateApi, type MinutesTemplate } from '../../../../lib/api/minutes_template';
 import { knowledgeApi, type KnowledgeDocument } from '../../../../lib/api/knowledge';
 import { UploadDocumentModal } from '../../../../components/UploadDocumentModal';
+import { useLocaleText } from '../../../../i18n/useLocaleText';
 
 interface PostMeetTabFirefliesProps {
   meeting: MeetingWithParticipants;
@@ -72,43 +72,6 @@ interface FilterState {
   topics: string[];
   searchQuery: string;
 }
-
-interface VideoSuggestion {
-  id: string;
-  title: string;
-  channel: string;
-  duration: string;
-  url: string;
-  accent: string;
-}
-
-// TODO: replace with backend-driven suggestions once personalization is available.
-const DEFAULT_VIDEO_SUGGESTIONS: VideoSuggestion[] = [
-  {
-    id: 'yt-01',
-    title: 'Nền tảng AI: Cách tạo biên bản cuộc họp đầu tiên',
-    channel: 'Minute Labs',
-    duration: '28:12',
-    url: 'https://www.youtube.com/watch?v=3U8n4VgZ2gk',
-    accent: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-  },
-  {
-    id: 'yt-02',
-    title: 'Workshop đồng bộ sản phẩm: Từ ghi chú đến danh sách việc cần làm',
-    channel: 'Team Rituals',
-    duration: '42:05',
-    url: 'https://www.youtube.com/watch?v=Y3A6gQ9c2BM',
-    accent: 'linear-gradient(135deg, #14b8a6, #0ea5e9)',
-  },
-  {
-    id: 'yt-03',
-    title: 'Cập nhật lãnh đạo: Cấu trúc recap điều hành hằng tuần',
-    channel: 'Workflows Academy',
-    duration: '35:47',
-    url: 'https://www.youtube.com/watch?v=V7L8eF7JX2c',
-    accent: 'linear-gradient(135deg, #f59e0b, #ef4444)',
-  },
-];
 
 export const PostMeetTabFireflies = ({ meeting, onRefresh }: PostMeetTabFirefliesProps) => {
   const [minutes, setMinutes] = useState<MeetingMinutes | null>(null);
@@ -367,7 +330,6 @@ export const PostMeetTabFireflies = ({ meeting, onRefresh }: PostMeetTabFireflie
         defaultTemplate={defaultTemplate}
         templatesLoading={templatesLoading}
         isEmptySession={isEmptySession}
-        videoSuggestions={DEFAULT_VIDEO_SUGGESTIONS}
       />
 
       {/* Right - Transcript */}
@@ -394,6 +356,7 @@ interface LeftPanelProps {
 }
 
 const LeftPanel = ({ meetingId, filters, setFilters, actionItems, transcripts }: LeftPanelProps) => {
+  const { lt } = useLocaleText();
   const [expandedSections, setExpandedSections] = useState({
     filters: true,
     topics: true,
@@ -469,8 +432,8 @@ const LeftPanel = ({ meetingId, filters, setFilters, actionItems, transcripts }:
             <Upload size={18} />
           </div>
           <div>
-            <div className="fireflies-upload-card__title">Tài liệu phiên</div>
-            <div className="fireflies-upload-card__subtitle">Tải lên tài liệu liên quan đến phiên này.</div>
+            <div className="fireflies-upload-card__title">{lt('Tài liệu phiên', 'Session documents')}</div>
+            <div className="fireflies-upload-card__subtitle">{lt('Tải lên tài liệu liên quan đến phiên này.', 'Upload documents related to this session.')}</div>
           </div>
         </div>
         <button
@@ -479,22 +442,22 @@ const LeftPanel = ({ meetingId, filters, setFilters, actionItems, transcripts }:
           disabled={!safeMeetingId}
           title={!safeMeetingId ? 'ID phiên không hợp lệ' : undefined}
         >
-          Tải tài liệu
+          {lt('Tải tài liệu', 'Upload doc')}
         </button>
       </div>
 
       <div className="fireflies-filter-section" style={{ marginBottom: 12 }}>
         <div className="fireflies-filter-section__header">
-          <h4 style={{ margin: 0 }}>Tài liệu phiên ({documents.length})</h4>
+          <h4 style={{ margin: 0 }}>{lt('Tài liệu phiên', 'Session documents')} ({documents.length})</h4>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
           {docsLoading ? (
             <div className="fireflies-empty">
-              <p>Đang tải tài liệu...</p>
+              <p>{lt('Đang tải tài liệu...', 'Loading documents...')}</p>
             </div>
           ) : documents.length === 0 ? (
             <div className="fireflies-empty">
-              <p>Chưa có tài liệu trong phiên</p>
+              <p>{lt('Chưa có tài liệu trong phiên', 'No documents in this session')}</p>
             </div>
           ) : (
             documents.slice(0, 6).map((doc) => (
@@ -550,7 +513,7 @@ const LeftPanel = ({ meetingId, filters, setFilters, actionItems, transcripts }:
         </div>
         <input
           className="fireflies-search__input"
-          placeholder="Tìm kiếm thông minh"
+          placeholder={lt('Tìm kiếm thông minh', 'Smart search')}
           value={filters.searchQuery}
           onChange={(e) => setFilters({ ...filters, searchQuery: e.target.value })}
         />
@@ -558,13 +521,13 @@ const LeftPanel = ({ meetingId, filters, setFilters, actionItems, transcripts }:
 
       {/* AI Filters Section */}
       <FilterSection
-        title="BỘ LỌC AI"
+        title={lt('BỘ LỌC AI', 'AI FILTERS')}
         isExpanded={expandedSections.filters}
         onToggle={() => toggleSection('filters')}
       >
         <FilterChip
           icon={<MessageCircle size={14} />}
-          label="Câu hỏi"
+          label={lt('Câu hỏi', 'Questions')}
           count={questionsCount}
           color="#f59e0b"
           active={filters.questions}
@@ -572,7 +535,7 @@ const LeftPanel = ({ meetingId, filters, setFilters, actionItems, transcripts }:
         />
         <FilterChip
           icon={<Calendar size={14} />}
-          label="Ngày & mốc thời gian"
+          label={lt('Ngày & mốc thời gian', 'Dates & timeline')}
           count={datesCount}
           color="#8b5cf6"
           active={filters.dates}
@@ -580,7 +543,7 @@ const LeftPanel = ({ meetingId, filters, setFilters, actionItems, transcripts }:
         />
         <FilterChip
           icon={<TrendingUp size={14} />}
-          label="Chỉ số"
+          label={lt('Chỉ số', 'Metrics')}
           count={metricsCount}
           color="#3b82f6"
           active={filters.metrics}
@@ -588,7 +551,7 @@ const LeftPanel = ({ meetingId, filters, setFilters, actionItems, transcripts }:
         />
         <FilterChip
           icon={<CheckSquare size={14} />}
-          label="Công việc"
+          label={lt('Công việc', 'Tasks')}
           count={actionItems.length}
           color="#10b981"
           active={filters.tasks}
@@ -598,13 +561,13 @@ const LeftPanel = ({ meetingId, filters, setFilters, actionItems, transcripts }:
 
       {/* Topic Trackers Section */}
       <FilterSection
-        title="THEO DÕI CHỦ ĐỀ"
+        title={lt('THEO DÕI CHỦ ĐỀ', 'TOPIC TRACKING')}
         isExpanded={expandedSections.topics}
         onToggle={() => toggleSection('topics')}
       >
-        <TopicChip label="Nhóm tăng trưởng" count={7} />
-        <TopicChip label="Nhóm marketing" count={5} />
-        <TopicChip label="Sản phẩm" count={3} />
+        <TopicChip label={lt('Nhóm tăng trưởng', 'Growth team')} count={7} />
+        <TopicChip label={lt('Nhóm marketing', 'Marketing team')} count={5} />
+        <TopicChip label={lt('Sản phẩm', 'Product')} count={3} />
       </FilterSection>
 
       <UploadDocumentModal
@@ -641,7 +604,6 @@ interface CenterPanelProps {
   defaultTemplate: MinutesTemplate | null;
   templatesLoading: boolean;
   isEmptySession: boolean;
-  videoSuggestions: VideoSuggestion[];
 }
 
 const CenterPanel = ({
@@ -664,7 +626,6 @@ const CenterPanel = ({
   defaultTemplate,
   templatesLoading,
   isEmptySession,
-  videoSuggestions,
 }: CenterPanelProps) => {
   const [isEditingSummary, setIsEditingSummary] = useState(false);
   const [editContent, setEditContent] = useState('');
@@ -1042,17 +1003,6 @@ const CenterPanel = ({
     }
   };
 
-  const handleSetLocalUrl = async (url: string) => {
-    try {
-      await meetingsApi.update(meeting.id, { recording_url: url });
-      await onRefresh();
-      alert('Đã lưu URL video thành công.');
-    } catch (err: any) {
-      console.error('Set local URL failed:', err);
-      alert(`Lỗi: ${err.message || 'Không thể lưu URL video'}`);
-    }
-  };
-
   const handleVideoDelete = async () => {
     if (!meeting.recording_url) return;
 
@@ -1077,16 +1027,6 @@ const CenterPanel = ({
     }
   };
 
-  const handlePickSuggestion = async (suggestion: VideoSuggestion) => {
-    if (!suggestion.url) return;
-    await handleSetLocalUrl(suggestion.url);
-  };
-
-  const handleDownloadSuggestion = (suggestion: VideoSuggestion) => {
-    if (!suggestion.url) return;
-    window.open(suggestion.url, '_blank', 'noopener,noreferrer');
-  };
-
   if (isEmptySession) {
     return (
       <div className="fireflies-center-panel fireflies-center-panel--empty">
@@ -1095,7 +1035,6 @@ const CenterPanel = ({
             recordingUrl={meeting.recording_url}
             onUpload={handleVideoUpload}
             onDelete={handleVideoDelete}
-            onSetLocalUrl={handleSetLocalUrl}
             isUploading={isUploadingVideo}
             isProcessing={isProcessingVideo}
             dragActive={dragActive}
@@ -1104,11 +1043,6 @@ const CenterPanel = ({
             onFileInput={handleFileInput}
             showHeader={false}
             minimal
-          />
-          <SuggestedVideoCarousel
-            suggestions={videoSuggestions}
-            onPick={handlePickSuggestion}
-            onDownload={handleDownloadSuggestion}
           />
         </div>
       </div>
@@ -1122,7 +1056,6 @@ const CenterPanel = ({
         recordingUrl={meeting.recording_url}
         onUpload={handleVideoUpload}
         onDelete={handleVideoDelete}
-        onSetLocalUrl={handleSetLocalUrl}
         isUploading={isUploadingVideo}
         isProcessing={isProcessingVideo}
         proofText={videoProofText}
@@ -1519,7 +1452,6 @@ interface VideoSectionProps {
   recordingUrl?: string | null;
   onUpload: (file: File) => void;
   onDelete: () => void;
-  onSetLocalUrl: (url: string) => void;
   isUploading: boolean;
   isProcessing: boolean;
   proofText?: string | null;
@@ -1535,7 +1467,6 @@ const VideoSection = ({
   recordingUrl,
   onUpload,
   onDelete,
-  onSetLocalUrl,
   isUploading,
   isProcessing,
   proofText,
@@ -1546,16 +1477,7 @@ const VideoSection = ({
   showHeader = true,
   minimal = false,
 }: VideoSectionProps) => {
-  const [localUrlInput, setLocalUrlInput] = useState('');
-  const [showUrlInput, setShowUrlInput] = useState(false);
-
-  const handleSetLocalUrl = () => {
-    if (localUrlInput.trim()) {
-      onSetLocalUrl(localUrlInput.trim());
-      setLocalUrlInput('');
-      setShowUrlInput(false);
-    }
-  };
+  const { lt } = useLocaleText();
 
   if (recordingUrl) {
     // Show video player
@@ -1565,12 +1487,12 @@ const VideoSection = ({
           <div className="fireflies-video-header">
           <div className="fireflies-video-title">
             <Video size={18} />
-              <span>Bản ghi video</span>
+              <span>{lt('Bản ghi video', 'Video recording')}</span>
           </div>
             <button
               className="fireflies-video-delete-btn"
               onClick={onDelete}
-              title="Xóa video"
+              title={lt('Xóa video', 'Delete video')}
               type="button"
             >
               <Trash2 size={16} />
@@ -1589,7 +1511,7 @@ const VideoSection = ({
             className="fireflies-video-element"
             style={{ width: '100%', maxHeight: '400px', borderRadius: 'var(--radius-md)' }}
           >
-            Trình duyệt của bạn không hỗ trợ phát video.
+            {lt('Trình duyệt của bạn không hỗ trợ phát video.', 'Your browser does not support video playback.')}
           </video>
         </div>
       </div>
@@ -1603,7 +1525,7 @@ const VideoSection = ({
         <div className="fireflies-video-header">
           <div className="fireflies-video-title">
             <Video size={18} />
-            <span>Bản ghi video</span>
+            <span>{lt('Bản ghi video', 'Video recording')}</span>
           </div>
         </div>
       )}
@@ -1626,14 +1548,14 @@ const VideoSection = ({
         {isUploading ? (
           <div className="fireflies-upload-status">
             <Loader size={32} className="spinner" />
-            <p className="fireflies-upload-text">Đang tải lên video...</p>
-            <p className="fireflies-upload-hint">Vui lòng đợi, không đóng trang</p>
+            <p className="fireflies-upload-text">{lt('Đang tải lên video...', 'Uploading video...')}</p>
+            <p className="fireflies-upload-hint">{lt('Vui lòng đợi, không đóng trang', 'Please wait, do not close this page')}</p>
           </div>
         ) : isProcessing ? (
           <div className="fireflies-upload-status">
             <Loader size={32} className="spinner" />
-            <p className="fireflies-upload-text">Đang xử lý video...</p>
-            <p className="fireflies-upload-hint">AI đang tạo transcript và biên bản họp</p>
+            <p className="fireflies-upload-text">{lt('Đang xử lý video...', 'Processing video...')}</p>
+            <p className="fireflies-upload-hint">{lt('AI đang tạo transcript và biên bản họp', 'AI is generating transcript and meeting minutes')}</p>
           </div>
         ) : (
           <>
@@ -1641,112 +1563,20 @@ const VideoSection = ({
               <Upload size={48} strokeWidth={1.5} />
             </div>
             <div className="fireflies-upload-content">
-              <h3 className="fireflies-upload-title">Tải lên video cuộc họp</h3>
+              <h3 className="fireflies-upload-title">{lt('Tải lên video cuộc họp', 'Upload meeting video')}</h3>
               <p className="fireflies-upload-description">
-                Kéo thả video vào đây hoặc click để chọn file
+                {lt('Kéo thả video vào đây hoặc click để chọn file', 'Drag and drop video here or click to choose a file')}
               </p>
               <p className="fireflies-upload-formats">
-                Hỗ trợ: MP4, MOV, AVI, MKV, WebM
+                {lt('Hỗ trợ: MP4, MOV, AVI, MKV, WebM', 'Supported: MP4, MOV, AVI, MKV, WebM')}
               </p>
             </div>
             <label htmlFor="video-upload-input" className="fireflies-upload-button">
               <Upload size={16} style={{ marginRight: 6 }} />
-              Chọn file video
+              {lt('Chọn file video từ máy', 'Choose video file from your device')}
             </label>
-
-            {/* Local URL Input Toggle */}
-            <div style={{ marginTop: 16, textAlign: 'center' }}>
-              {!showUrlInput ? (
-                <button
-                  type="button"
-                  className="btn btn--ghost btn--sm"
-                  onClick={() => setShowUrlInput(true)}
-                  style={{ fontSize: 12 }}
-                >
-                  Hoặc nhập URL video trực tiếp -&gt; mở rộng ra
-                </button>
-              ) : (
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'center' }}>
-                  <input
-                    type="text"
-                    placeholder="http://localhost:8000/files/video.mp4"
-                    value={localUrlInput}
-                    onChange={(e) => setLocalUrlInput(e.target.value)}
-                    style={{
-                      padding: '8px 12px',
-                      border: '1px solid var(--border)',
-                      borderRadius: 'var(--radius-sm)',
-                      fontSize: 13,
-                      width: 280,
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className="btn btn--primary btn--sm"
-                    onClick={handleSetLocalUrl}
-                    disabled={!localUrlInput.trim()}
-                  >
-                    Lưu
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn--ghost btn--sm"
-                    onClick={() => setShowUrlInput(false)}
-                  >
-                    Hủy
-                  </button>
-                </div>
-              )}
-            </div>
           </>
         )}
-      </div>
-    </div>
-  );
-};
-
-const SuggestedVideoCarousel = ({
-  suggestions,
-  onPick,
-  onDownload,
-}: {
-  suggestions: VideoSuggestion[];
-  onPick: (suggestion: VideoSuggestion) => void;
-  onDownload: (suggestion: VideoSuggestion) => void;
-}) => {
-  if (!suggestions.length) return null;
-
-  return (
-    <div className="fireflies-suggest">
-      <div className="fireflies-suggest-header">Video gợi ý</div>
-      <div className="fireflies-suggest-carousel">
-        {suggestions.map((item) => (
-          <div key={item.id} className="fireflies-suggest-card">
-            <div className="fireflies-suggest-thumb" style={{ background: item.accent }} />
-            <div className="fireflies-suggest-title">{item.title}</div>
-            <div className="fireflies-suggest-meta">
-              {item.channel} • {item.duration}
-            </div>
-            <div className="fireflies-suggest-overlay">
-              <button
-                type="button"
-                className="fireflies-suggest-action"
-                onClick={() => onDownload(item)}
-              >
-                <Download size={14} />
-                Tải xuống
-              </button>
-              <button
-                type="button"
-                className="fireflies-suggest-action fireflies-suggest-action--primary"
-                onClick={() => onPick(item)}
-              >
-                <Play size={14} />
-                Chọn video này
-              </button>
-            </div>
-          </div>
-        ))}
       </div>
     </div>
   );

@@ -25,7 +25,6 @@ from app.api.v1.endpoints import (
     minutes,
     minutes_template,
     tools,
-    marketing,
     asr,
     realtime_av,
 )
@@ -77,7 +76,6 @@ app.include_router(participants.router, prefix=f"{settings.api_v1_prefix}/partic
 app.include_router(minutes.router, prefix=f"{settings.api_v1_prefix}/minutes", tags=['minutes'])
 app.include_router(minutes_template.router, prefix=f"{settings.api_v1_prefix}/minutes-templates", tags=['minutes-templates'])
 app.include_router(tools.router, prefix=f"{settings.api_v1_prefix}/tools", tags=['tools'])
-app.include_router(marketing.router, prefix=f"{settings.api_v1_prefix}/marketing", tags=['marketing'])
 app.include_router(asr.router, prefix=f"{settings.api_v1_prefix}/asr", tags=['asr'])
 app.include_router(realtime_av.router, prefix=f"{settings.api_v1_prefix}/realtime-av", tags=['realtime-av'])
 app.include_router(in_meeting_ws.router, prefix=f"{settings.api_v1_prefix}/ws", tags=['ws'])

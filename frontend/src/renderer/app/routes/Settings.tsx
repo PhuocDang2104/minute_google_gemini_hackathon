@@ -484,6 +484,7 @@ const Settings = () => {
     borderRadius: 'var(--radius-sm)',
     color: 'var(--text-primary)',
     fontSize: '13px',
+    fontFamily: 'var(--font-body)',
   }
 
   const textAreaStyle = {
@@ -498,7 +499,7 @@ const Settings = () => {
   }
 
   return (
-    <div>
+    <div className="settings-page">
       <div className="page-header">
         <div>
           <h1 className="page-header__title">{lt('Cài đặt', 'Settings')}</h1>
@@ -657,36 +658,6 @@ const Settings = () => {
               {lt('Cấu hình model, khóa API và các tính năng AI trong phiên/post-session.', 'Configure models, API keys, and AI features for in-session/post-session flow.')}
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-              <div>
-                <label style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 'var(--space-xs)', display: 'block' }}>
-                  {lt('Giao diện', 'Theme')}
-                </label>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  {([
-                    { value: 'light', label: lt('Sáng', 'Light') },
-                    { value: 'dark', label: lt('Tối', 'Dark') },
-                    { value: 'system', label: lt('Theo hệ thống', 'System') },
-                  ] as { value: ThemeMode; label: string }[]).map(option => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => updateSystem('theme', option.value)}
-                      style={{
-                        padding: '8px 12px',
-                        borderRadius: '999px',
-                        border: `1px solid ${settings.system.theme === option.value ? 'var(--accent)' : 'var(--border)'}`,
-                        background: settings.system.theme === option.value ? 'var(--accent)' : 'var(--bg-surface)',
-                        color: settings.system.theme === option.value ? 'white' : 'var(--text-primary)',
-                        fontSize: 12,
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
               <div>
                 <label style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 'var(--space-xs)', display: 'block' }}>
                   {lt('Recap trong phiên', 'In-session recap')}

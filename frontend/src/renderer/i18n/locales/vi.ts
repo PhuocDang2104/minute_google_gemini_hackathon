@@ -66,7 +66,7 @@ export const vi = {
   meetings: {
     title: 'Cuộc họp',
     create: 'Tạo cuộc họp',
-    edit: 'Chỉnh sửa cuộc họp',
+    edit: 'Chỉnh sửa phiên',
     delete: 'Xóa cuộc họp',
     join: 'Tham gia',
     start: 'Bắt đầu họp',

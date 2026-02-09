@@ -4,7 +4,7 @@
    ============================================ */
 
 /* Google Fonts Import */
-@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600&family=Montserrat+Alternates:wght@600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600&family=Inter:wght@500;600;700&display=swap');
 
 /* Feature-specific styles */
 @import './notion-editor.css';
@@ -92,7 +92,7 @@
   --radius-pill: 999px;
   
   /* Typography */
-  --font-heading: 'Montserrat Alternates', sans-serif;
+  --font-heading: 'Inter', 'Be Vietnam Pro', sans-serif;
   --font-body: 'Be Vietnam Pro', sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   
@@ -135,6 +135,15 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   zoom: var(--app-zoom);
+}
+
+.settings-page input::placeholder,
+.settings-page textarea::placeholder {
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-muted);
+  opacity: 1;
 }
 
 /* Headings */
@@ -487,14 +496,20 @@ a {
 .sidebar__avatar {
   width: 36px;
   height: 36px;
-  background: var(--accent);
   border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: 600;
-  font-size: 13px;
-  color: var(--text-on-accent);
+}
+
+.sidebar__avatar-image {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
 }
 
 .sidebar__user-info {
@@ -515,8 +530,8 @@ a {
 .sidebar__user-role {
   font-size: 10px;
   color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  text-transform: none;
+  letter-spacing: 0.02em;
 }
 
 .sidebar__logout-btn {
@@ -762,6 +777,12 @@ a {
   background: var(--bg-surface);
   color: var(--text-primary);
   border-color: var(--border);
+}
+
+.topbar__icon-btn--logout:hover {
+  color: #ffb4b4;
+  border-color: rgba(255, 180, 180, 0.45);
+  background: rgba(239, 68, 68, 0.16);
 }
 
 .topbar__icon-btn--badge::after {
@@ -8769,11 +8790,19 @@ a {
   width: 36px;
   height: 36px;
   border-radius: 12px;
-  background: var(--accent-subtle);
-  color: var(--accent);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.ai-sidebar__avatar-image {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
 }
 
 .ai-sidebar__title {
@@ -14615,8 +14644,15 @@ a {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 10px 12px;
+  font-family: var(--font-body);
   font-size: 14px;
   background: var(--bg-base);
+}
+
+.project-modal__grid input::placeholder,
+.project-modal__grid textarea::placeholder {
+  font-family: var(--font-body);
+  color: var(--text-muted);
 }
 
 .project-modal__full {

@@ -66,7 +66,7 @@ export const en = {
   meetings: {
     title: 'Meetings',
     create: 'Create Meeting',
-    edit: 'Edit Meeting',
+    edit: 'Edit Session',
     delete: 'Delete Meeting',
     join: 'Join',
     start: 'Start Meeting',

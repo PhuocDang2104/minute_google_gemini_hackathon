@@ -3,7 +3,6 @@ from .meeting import Meeting
 from .document import Document
 from .embedding import Embedding
 from .chat_session import ChatSession, ChatMessage
-from .marketing import MarketingLead
 from .knowledge import KnowledgeDocument, KnowledgeChunk
 from .adr import (
     TranscriptChunk,
@@ -50,7 +49,6 @@ __all__ = [
     'AdrHistory',
     'AiEventLog',
     'ToolSuggestion',
-    'MarketingLead',
     'RecapSegment',
     'VisualEvent',
     'VisualObjectEvent',

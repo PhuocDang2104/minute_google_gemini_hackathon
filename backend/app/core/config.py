@@ -94,7 +94,6 @@ class Settings(BaseSettings):
     smtp_password: str = ''  # App Password (16 chars, no spaces)
     email_from_name: str = 'MeetMate AI'
     email_enabled: bool = False  # Set to True when SMTP is configured
-    marketing_broadcast_token: str = ''  # Optional shared secret for bulk email triggers
 
     # Supabase Storage (S3-compatible)
     supabase_s3_endpoint: str = ''

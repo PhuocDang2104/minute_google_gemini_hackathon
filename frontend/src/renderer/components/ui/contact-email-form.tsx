@@ -1,6 +1,5 @@
 import React, { useState } from 'react'
 import { Check, Mail, AlertCircle } from 'lucide-react'
-import { api } from '../../lib/apiClient'
 import { cn } from '../../lib/utils'
 
 type ContactEmailFormProps = {
@@ -11,6 +10,7 @@ export const ContactEmailForm = ({ className }: ContactEmailFormProps) => {
   const [email, setEmail] = useState('')
   const [status, setStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle')
   const [errorMessage, setErrorMessage] = useState('')
+  const supportEmail = 'minute.support@gmail.com'
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -21,11 +21,13 @@ export const ContactEmailForm = ({ className }: ContactEmailFormProps) => {
     setErrorMessage('')
 
     try {
-      await api.post('/marketing/join', { email: trimmed }, { skipAuth: true })
+      const subject = encodeURIComponent('Minute product consultation')
+      const body = encodeURIComponent(`Please contact me at: ${trimmed}`)
+      window.location.href = `mailto:${supportEmail}?subject=${subject}&body=${body}`
       setStatus('success')
-    } catch (err: any) {
+    } catch {
       setStatus('error')
-      setErrorMessage(err?.data?.detail || 'Có lỗi xảy ra. Vui lòng thử lại.')
+      setErrorMessage('Something went wrong. Please try again.')
     }
   }
 
@@ -45,7 +47,7 @@ export const ContactEmailForm = ({ className }: ContactEmailFormProps) => {
           <input
             type="email"
             name="contactEmail"
-            placeholder="Nhập Gmail của bạn..."
+            placeholder="Enter your work email..."
             value={email}
             onChange={handleChange}
             autoComplete="email"
@@ -54,13 +56,13 @@ export const ContactEmailForm = ({ className }: ContactEmailFormProps) => {
           />
         </div>
         <button type="submit" className="btn btn-primary" disabled={status === 'submitting'}>
-          {status === 'submitting' ? 'Đang gửi...' : 'Nhận tư vấn'}
+          {status === 'submitting' ? 'Opening mail app...' : 'Request Consultation'}
         </button>
       </div>
       {status === 'success' ? (
         <div className="contact-form__message contact-form__message--success">
           <Check size={16} />
-          Đã ghi nhận email. Minute sẽ liên hệ sớm.
+          Thanks. Your email app has been opened to send the request.
         </div>
       ) : null}
       {status === 'error' ? (
