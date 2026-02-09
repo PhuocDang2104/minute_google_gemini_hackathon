@@ -122,27 +122,27 @@ export const Landing: React.FC = () => {
               <div className="feature-icon">
                 <Calendar />
               </div>
-              <h3>Pre-Meeting</h3>
+              <h3>Session Hub & Ingest</h3>
               <p className="feature-card__summary">
-                AI builds agendas, suggests pre-read docs, and recommends who should join.
+                Run live sessions or upload recordings with unified artifacts and timeline context.
               </p>
             </div>
             <div className="feature-card__expanded">
               <div className="feature-card__details">
                 <p className="feature-card__desc">
-                  Minute syncs calendars from Outlook, Teams, and GoMeet, detects session context and stakeholders,
-                  then uses RAG to retrieve the right internal policies, proposals, and previous minutes. Everything
-                  is packaged into a practical pre-read bundle with a suggested agenda.
+                  MINUTE supports meeting and study session types in one workflow. Teams can start live sessions or
+                  upload audio/video records for offline processing, then review transcript, recap windows, Q&A, and
+                  attached references in a single session timeline.
                 </p>
                 <ul className="feature-card__list">
-                  <li>Calendar sync and smart context detection</li>
-                  <li>RAG retrieval for policy/proposal/minutes references</li>
-                  <li>Auto-generated pre-read pack and agenda draft</li>
-                  <li>Key question suggestions for participants</li>
+                  <li>Meeting and study sessions in one product flow</li>
+                  <li>Live capture and offline upload for the same processing pipeline</li>
+                  <li>Timestamped transcript, recap, and visual moment artifacts</li>
+                  <li>Centralized session detail page for history and follow-up</li>
                 </ul>
               </div>
               <div className="feature-card__media">
-                <img src="/landing/pre.png" alt="Pre-meeting overview" />
+                <img src="/landing/pre.png" alt="Session hub and ingest overview" />
               </div>
             </div>
           </div>
@@ -151,27 +151,27 @@ export const Landing: React.FC = () => {
               <div className="feature-icon">
                 <MessageSquare />
               </div>
-              <h3>In-Meeting</h3>
+              <h3>Realtime Multimodal Companion</h3>
               <p className="feature-card__summary">
-                Real-time notes with automatic actions, decisions, and risk detection.
+                Audio and visual context are merged into recap windows every two minutes.
               </p>
             </div>
             <div className="feature-card__expanded">
               <div className="feature-card__details">
                 <p className="feature-card__desc">
-                  Minute joins as an AI participant and surfaces Live Notes, Actions, and Ask AI in one timeline.
-                  It tracks speakers, continuously summarizes progress, identifies Action/Decision/Risk events,
-                  and recommends follow-up tasks with owner and due-date confirmation before submission.
+                  MINUTE ingests streaming audio and key video frames, aligns events by server timebase, and produces
+                  recap windows that reflect both what was said and what was shown. The timeline updates continuously
+                  during the session for low-friction tracking.
                 </p>
                 <ul className="feature-card__list">
-                  <li>Live Notes by speaker with timeline recap</li>
-                  <li>Automatic Action/Decision/Risk extraction</li>
-                  <li>Follow-up task suggestions with a confirmation step</li>
-                  <li>Ask AI grounded in approved internal documents</li>
+                  <li>ASR streaming with partial and final transcript segments</li>
+                  <li>Frame sampling and slide-change based visual understanding</li>
+                  <li>Two-minute recap windows with citations</li>
+                  <li>Meeting decisions/actions or study concepts extracted in-session</li>
                 </ul>
               </div>
               <div className="feature-card__media">
-                <img src="/landing/in.png" alt="In-meeting assistant" />
+                <img src="/landing/in.png" alt="Realtime multimodal companion" />
               </div>
             </div>
           </div>
@@ -180,27 +180,27 @@ export const Landing: React.FC = () => {
               <div className="feature-icon">
                 <FileText />
               </div>
-              <h3>Post-Meeting</h3>
+              <h3>Post-Session Summary Engine</h3>
               <p className="feature-card__summary">
-                Auto-generate minutes, sync tasks to Jira/Planner, and share recaps instantly.
+                Generate structured outputs by session type, with versioned artifacts for reuse.
               </p>
             </div>
             <div className="feature-card__expanded">
               <div className="feature-card__details">
                 <p className="feature-card__desc">
-                  Once a session ends, Minute produces structured minutes with objectives, key discussion points,
-                  decisions, actions, and risks tied to precise timestamps. Action items can sync to Planner, Jira,
-                  Work, or internal tools with the correct owner and deadline.
+                  After a session, MINUTE consolidates final transcript, recap timeline, and references into a core
+                  summary, then branches output generation for meetings or study sessions. Each summary is stored with
+                  version history to support review and iteration.
                 </p>
                 <ul className="feature-card__list">
-                  <li>Structured minutes with timestamp references</li>
-                  <li>Action/decision tracking with owner and due date</li>
-                  <li>Planner/Jira/Work synchronization</li>
-                  <li>Fast lookup of decisions by session history</li>
+                  <li>Meeting outputs: summary, action items, and related documents</li>
+                  <li>Study outputs: concepts, examples, and layered quiz support</li>
+                  <li>Versioned summary artifacts for controlled updates</li>
+                  <li>Export-oriented structure for DOCX/PDF pipelines</li>
                 </ul>
               </div>
               <div className="feature-card__media">
-                <img src="/landing/post.png" alt="Post-meeting summary" />
+                <img src="/landing/post.png" alt="Post-session summary engine" />
               </div>
             </div>
           </div>
@@ -209,26 +209,27 @@ export const Landing: React.FC = () => {
               <div className="feature-icon">
                 <CheckSquare />
               </div>
-              <h3>RAG Q&A</h3>
+              <h3>Tiered LightRAG Q&A</h3>
               <p className="feature-card__summary">
-                Ask AI about documents and policies with reliable source citations.
+                Grounded answers first, controlled escalation only when evidence is insufficient.
               </p>
             </div>
             <div className="feature-card__expanded">
               <div className="feature-card__details">
                 <p className="feature-card__desc">
-                  Query policy, metrics, and internal knowledge in project context. Every answer includes source
-                  references, suggested follow-up prompts, and strict access-control compliance.
+                  Q&A starts from session memory and uploaded documents before any optional web expansion. The assistant
+                  runs self-check and citation validation, and applies policy gates plus user approval for risky
+                  tool-calling behavior.
                 </p>
                 <ul className="feature-card__list">
-                  <li>Context-aware retrieval for the right documents</li>
-                  <li>Cited answers for trust and traceability</li>
-                  <li>Suggested next questions for deeper analysis</li>
-                  <li>Document-level permission enforcement</li>
+                  <li>Tier 0 and Tier 1 retrieval for fast grounded responses</li>
+                  <li>Tier 2 web search only when policy allows and user approves</li>
+                  <li>Tier 3 deep research for complex multi-hop queries</li>
+                  <li>No-source-no-answer guardrail for critical claims</li>
                 </ul>
               </div>
               <div className="feature-card__media">
-                <img src="/landing/rag.png" alt="RAG Q&A" />
+                <img src="/landing/rag.png" alt="Tiered LightRAG Q&A" />
               </div>
             </div>
           </div>
