@@ -334,6 +334,8 @@ export const PostMeetTabFireflies = ({ meeting, onRefresh }: PostMeetTabFireflie
         defaultTemplate={defaultTemplate}
         templatesLoading={templatesLoading}
         isEmptySession={isEmptySession}
+        videoProofText={videoProofText}
+        setVideoProofText={setVideoProofText}
       />
 
       {/* Right - Transcript */}
@@ -608,6 +610,8 @@ interface CenterPanelProps {
   defaultTemplate: MinutesTemplate | null;
   templatesLoading: boolean;
   isEmptySession: boolean;
+  videoProofText: string | null;
+  setVideoProofText: (value: string | null) => void;
 }
 
 const CenterPanel = ({
@@ -630,6 +634,8 @@ const CenterPanel = ({
   defaultTemplate,
   templatesLoading,
   isEmptySession,
+  videoProofText,
+  setVideoProofText,
 }: CenterPanelProps) => {
   const [isEditingSummary, setIsEditingSummary] = useState(false);
   const [editContent, setEditContent] = useState('');
